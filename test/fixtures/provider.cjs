@@ -44,14 +44,19 @@ exports.run = function run(provider, trace, args) {
   const fields = schema?.required ?? [];
   let step, answer;
   if (fields.includes("mode")) {
-    step = "plan";
-    answer = { mode: "review", reason: "Inspect existing work", instructions: "Review the inventory." };
+    step = "route";
+    answer = input.includes("implement a review dashboard")
+      ? { mode: "build", reason: "The request calls for a dashboard." }
+      : { mode: "review", reason: "The request asks for an inspection." };
   } else if (fields.includes("decisions")) {
     step = "triage";
     answer = { decisions: [
       { id: "F1", verdict: "fix", reason: "Wrong total" },
       { id: "F2", verdict: "skip", reason: "Naming preference" },
     ], instructions: "Correct the inventory total." };
+  } else if (fields.includes("instructions")) {
+    step = "plan";
+    answer = { instructions: "Add the requested inventory dashboard to the existing interface." };
   } else if (fields.includes("findings")) {
     step = "review";
     const issues = ["Incorrect inventory total", "Rename inventory entry"];
@@ -59,6 +64,8 @@ exports.run = function run(provider, trace, args) {
       id: "F" + (i + 1), severity: "medium", file: "inventory", line: i + 1, issue, suggestion: "", repeat_of: null,
     }));
     answer = { summary: "Inspected inventory", findings };
+    const zone = "ReplicatedStorage/Zone.luau";
+    if (fs.existsSync(zone)) answer = { summary: fs.readFileSync(zone, "utf8"), findings: [] };
   } else {
     step = "build";
     answer = { summary: "Updated the inventory total" };

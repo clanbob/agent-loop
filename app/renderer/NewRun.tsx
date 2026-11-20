@@ -217,7 +217,7 @@ export function NewRun({ onStarted, onCancel }: { onStarted: (id: string) => voi
           value={task}
           onChange={(e) => setTask(e.target.value)}
           rows={8}
-          placeholder="What should be built or changed? Be as specific as you like."
+          placeholder="Describe what to build or review. Start with “Review:” to go straight to the reviewer."
         />
       </label>
 

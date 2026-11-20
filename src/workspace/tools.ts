@@ -42,7 +42,7 @@ export function createToolsWorkspace(_config: Config, spec: ToolsSpec): Workspac
     notes: {
       judge: `This run has no project folder. The work happens in live apps or services that the builder reaches through these MCP tools:
 ${servers}${notes}${focus}
-Write instructions in terms of what to create or change through those tools. You cannot use the tools yourself.`,
+Refer to live items by name or ID. The builder and reviewer have access to the tools.`,
       builder: `This run has no project folder. Make every change through these MCP tools:
 ${servers}${notes}${focus}
 Your working directory is an empty scratch folder; do not put the result there.
@@ -50,7 +50,7 @@ In your final report, say exactly what you created or changed and where (names, 
       reviewer: `This run has no project folder and no diff. The work lives in live apps or services reached through these MCP tools:
 ${servers}${notes}${focus}
 Use the tools ONLY to read and inspect. Never create, change, delete, run or save anything through them: you are the reviewer, not the builder.
-The builder's report says what it changed; check the real current state through the tools rather than trusting the report.`,
+Inspect the current state of the items named in the request or builder report.`,
     },
 
     async prepare() {

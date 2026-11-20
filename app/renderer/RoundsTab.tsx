@@ -52,7 +52,7 @@ function RoundCard({
   return (
     <article className="card round-card">
       <div className="card-head">
-        <h2>{round === 0 ? "Planning" : `Round ${round}`}</h2>
+        <h2>{round === 0 ? "Setup" : `Round ${round}`}</h2>
         <div className="round-summary">
           {record && (
             <span>

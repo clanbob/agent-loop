@@ -20,6 +20,8 @@ export function phaseLabel(phase: Phase, round: number): string {
   switch (phase) {
     case "prepare":
       return "Preparing workspace";
+    case "choose-start":
+      return "Judge selects the starting step";
     case "judge":
       return round === 0 ? "Judge plans the work" : "Judge evaluates findings";
     case "build":
@@ -29,7 +31,7 @@ export function phaseLabel(phase: Phase, round: number): string {
     case "test":
       return "Running tests";
     case "review":
-      return "Reviewer checks the work";
+      return "Reviewer inspects the code";
     case "manual-review":
       return "Waiting for your review";
     case "paused":
@@ -44,6 +46,7 @@ export function phaseLabel(phase: Phase, round: number): string {
 }
 
 export const PHASE_AGENT: Partial<Record<Phase, string>> = {
+  "choose-start": "judge",
   judge: "judge",
   build: "builder",
   review: "reviewer",

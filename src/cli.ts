@@ -246,6 +246,7 @@ async function main(): Promise<void> {
   node src/cli.ts run --roblox --task "..." --scope ServerScriptService/Feature [--scope ...] [--guide file.md] [--verbose]
       The open Roblox Studio place, edited live through the Studio MCP.
   Use --task-file task.md instead of --task for long tasks.
+  Start the task with "Review:" to send it straight to the reviewer, or "Build:" to start with a build plan.
   Choose models independently with --judge provider:model --builder provider:model --reviewer provider:model.
   Providers are antigravity, claude and codex. Set effort with --judge-effort, --builder-effort or --reviewer-effort.
   Add --manual-review to mark each finding Fix or Skip and submit it before another build.

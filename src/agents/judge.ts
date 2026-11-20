@@ -14,32 +14,27 @@ export interface Triage {
   instructions: string;
 }
 
-export async function runJudge(ctx: StepContext, prompt: string, label: string): Promise<string> {
-  const answer = await ask<{ instructions: string }>(ctx, prompt, label, "judge.schema.json", (a) => {
+export async function planBuild(ctx: StepContext, prompt: string): Promise<string> {
+  const answer = await ask<{ instructions: string }>(ctx, prompt, "judge-build", "judge.schema.json", (a) => {
     if (typeof a.instructions !== "string" || !a.instructions.trim()) throw new Error("empty instructions");
   });
-  writeFileSync(path.join(ctx.roundDir, `${label}.md`), answer.instructions, "utf8");
+  writeFileSync(path.join(ctx.roundDir, "judge-build.md"), answer.instructions, "utf8");
   return answer.instructions;
 }
 
-export interface StartPlan {
+export interface StartChoice {
   mode: "build" | "review";
   reason: string;
-  instructions: string;
 }
 
-export async function runJudgeStart(ctx: StepContext, prompt: string): Promise<StartPlan> {
-  const answer = await ask<StartPlan>(ctx, prompt, "judge-start", "start.schema.json", (a) => {
-    if (typeof a.instructions !== "string" || !a.instructions.trim()) throw new Error("empty instructions");
+export function chooseStart(ctx: StepContext, prompt: string): Promise<StartChoice> {
+  return askStructured<StartChoice>(ctx, prompt, {
+    role: "judge", label: "judge-start", schema: "start.schema.json", key: "mode", taskOnly: true,
+    validate(answer) {
+      if (answer.mode !== "build" && answer.mode !== "review") throw new Error("expected a build or review starting step");
+      if (typeof answer.reason !== "string") throw new Error("expected a reason for the starting step");
+    },
   });
-  const plan: StartPlan = {
-    mode: answer.mode === "review" ? "review" : "build",
-    reason: typeof answer.reason === "string" ? answer.reason.trim() : "",
-    instructions: answer.instructions,
-  };
-  writeFileSync(path.join(ctx.roundDir, "judge-start.md"), plan.instructions, "utf8");
-  writeFileSync(path.join(ctx.roundDir, "judge-start.json"), JSON.stringify(plan, null, 2), "utf8");
-  return plan;
 }
 
 export async function runTriage(ctx: StepContext, prompt: string, findings: Finding[]): Promise<Triage> {

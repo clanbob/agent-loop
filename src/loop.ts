@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { withAgentChoices, type Config } from "./config.ts";
 import type { AgentChoices, Role } from "./roles.ts";
 import { fillPrompt } from "./prompts.ts";
-import { runJudgeStart, runTriage, type Decision, type Triage } from "./agents/judge.ts";
+import { chooseStart, planBuild, runTriage, type Decision, type StartChoice, type Triage } from "./agents/judge.ts";
 import { runBuilder, writeBuilderMcpConfig } from "./agents/builder.ts";
 import { runReviewer } from "./agents/reviewer.ts";
 import { AgentError, type Finding, type StepContext } from "./agents/types.ts";
@@ -15,9 +15,9 @@ import { git } from "./git.ts";
 
 export type { AgentChoice, AgentChoices } from "./roles.ts";
 
-export type Phase = "prepare" | "snapshot" | "test" | "judge" | "build" | "review" | "manual-review" | "paused" | "done" | "stopped" | "failed";
+export type Phase = "prepare" | "choose-start" | "snapshot" | "test" | "judge" | "build" | "review" | "manual-review" | "paused" | "done" | "stopped" | "failed";
 
-export type Step = "prepare" | "judge-start" | "build" | "snapshot" | "review" | "repeat-check" | "judge-triage" | "manual-review";
+export type Step = "prepare" | "judge-start" | "plan-build" | "build" | "snapshot" | "review" | "repeat-check" | "judge-triage" | "manual-review";
 
 export interface RoundRecord {
   round: number;
@@ -125,8 +125,21 @@ const RESUME_NOTE =
   "You were cut off before you finished. Some of the work below may already be done. Re-read the affected files first, then finish whatever is left.";
 
 const TEST_OUTPUT_LINES = 200;
-const FORCED_MODE = /^\s*(review|build)\s*:/i;
 const MAX_LISTED_FILES = 400;
+
+// Fast paths for explicit prefixes and common opening actions. Leave ambiguous wording to the judge.
+function requestedStart(task: string): StartChoice["mode"] | null {
+  const opening = task.trimStart().replace(/^(?:(?:please|(?:can|could|would) you)\s+)+/i, "");
+  if (/^review\s*:/i.test(opening)) return "review";
+  if (/^build\s*:/i.test(opening)) return "build";
+  const change = opening.search(/\b(?:add|build|change|create|fix|implement|refactor|remove|replace|update|write)\b/i);
+  if (change === 0) return "build";
+  if (change > 0) return null;
+
+  const reviewAction = /^(?:review|audit|inspect|diagnose|scan|check (?:the|this|my|our|existing))\b/i;
+  const reviewTask = /^(?:do|run|perform|conduct)\s+(?:(?:an?|the|complete|full|thorough|comprehensive|diagnostic|code|performance|security)\s+)*(?:review|audit|scan|inspection)\b/i;
+  return reviewAction.test(opening) || reviewTask.test(opening) ? "review" : null;
+}
 
 function formatFindings(findings: Finding[]): string {
   return JSON.stringify(findings, null, 2);
@@ -306,6 +319,10 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
     const loop = new AgentLoop(config, hooks, state, false);
     if (state.cursor.step === "build" && state.buildStarted) loop.resumeInterruptedBuild = true;
     if (state.cursor.step === "review") state.cursor.step = "snapshot";
+    if (state.startMode === "review" && state.cursor.round === 1 && state.cursor.step === "snapshot") {
+      // Older versions saved a judge-authored review brief here.
+      state.instructions = null;
+    }
     state.status = "running";
     state.error = null;
     state.endReason = null;
@@ -478,6 +495,19 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
     return this.state;
   }
 
+  private async startingPoint(): Promise<StartChoice> {
+    const { task } = this.state;
+    const mode = requestedStart(task);
+    if (mode) return { mode, reason: "" };
+
+    this.phase("choose-start", 0);
+    const dir = path.join(this.roundDir(0), "routing");
+    mkdirSync(dir, { recursive: true });
+    const ctx = { ...this.context(dir, "judge"), workDir: dir, guides: [] };
+    const prompt = fillPrompt(this.config.root, "judge-start", { task });
+    return this.withLimitPause(0, () => chooseStart(ctx, prompt));
+  }
+
   private judgeTriage(record: RoundRecord, guides: string): Promise<Triage> {
     const { round } = record;
     this.phase("judge", round);
@@ -503,7 +533,6 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
     const { config, state, workspace } = this;
     const guides = guidesBlock(state.workspace.guides);
 
-    const setupDir = this.roundDir(0);
     if (config.agents.builder.provider === "claude") writeBuilderMcpConfig(this.runDir, workspace.builder);
     const systemPromptFile = path.join(this.runDir, "builder-system.md");
     writeFileSync(
@@ -517,6 +546,7 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
     for (;;) {
       this.checkStopped();
       const { round, step } = state.cursor;
+      const initialReview = state.startMode === "review" && round === 1;
 
       if (step === "prepare") {
         this.phase("prepare", 0);
@@ -524,28 +554,25 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
         this.emit("log", `Working on ${workspace.label} (starting point ${state.baselineCommit.slice(0, 8)})`);
         state.cursor = { round: 0, step: "judge-start" };
       } else if (step === "judge-start") {
+        const start = await this.startingPoint();
+        state.startMode = start.mode;
+        state.startReason = start.reason || null;
+        state.instructions = null;
+        const first = start.mode === "review" ? "a review of the existing code" : "a build";
+        this.emit("log", `Starting with ${first}${start.reason ? `: ${start.reason}` : ""}`);
+        state.cursor = start.mode === "review" ? { round: 1, step: "snapshot" } : { round: 0, step: "plan-build" };
+      } else if (step === "plan-build") {
         this.phase("judge", 0);
-        const forced = state.task.match(FORCED_MODE)?.[1]?.toLowerCase() as "build" | "review" | undefined;
-        const prompt = fillPrompt(config.root, "judge-start", {
+        const prompt = fillPrompt(config.root, "judge-build", {
           task: state.task,
           workspace: workspace.notes.judge,
           files: fileListing(workspace.workDir),
           guides,
-          modeNote: forced ? `The user started the request with "${forced}:", so choose "${forced}".` : "",
         });
-        const plan = await this.withLimitPause(0, () => runJudgeStart(this.context(setupDir, "judge"), prompt));
-        state.instructions = plan.instructions;
-        state.startMode = forced ?? plan.mode;
-        state.startReason = forced
-          ? `The task starts with "${forced[0].toUpperCase()}${forced.slice(1)}:".`
-          : plan.reason || null;
-        this.emit(
-          "log",
-          state.startMode === "review"
-            ? `Starting with a review of the existing code${state.startReason ? `: ${state.startReason}` : ""}`
-            : `Starting with a build${state.startReason ? `: ${state.startReason}` : ""}`,
+        state.instructions = await this.withLimitPause(0, () =>
+          planBuild(this.context(this.roundDir(0), "judge"), prompt),
         );
-        state.cursor = state.startMode === "review" ? { round: 1, step: "snapshot" } : { round: 1, step: "build" };
+        state.cursor = { round: 1, step: "build" };
       } else if (step === "build") {
         if (round > state.roundsAllowed) {
           const go = await this.hooks.confirmContinue({
@@ -614,8 +641,7 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
           `Round ${round}: ${roundFiles.length} file(s) changed this round, ${cumulativeFiles.length} in total`,
         );
 
-        const reviewingExisting = (state.buildsDone ?? round - 1) === 0;
-        if (workspace.tracksChanges && cumulativeFiles.length === 0 && !reviewingExisting) {
+        if (workspace.tracksChanges && cumulativeFiles.length === 0 && !initialReview) {
           const go = await this.hooks.confirmContinue({
             reason: "The builder finished but nothing has changed.",
             details: [(state.currentBuild?.summary ?? "").slice(0, 1500)],
@@ -670,17 +696,20 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
             : snap.test.exitCode === 0
               ? "passed (exit code 0)"
               : `FAILED (exit code ${snap.test.exitCode})`;
-          testsBlock = `The project's tests were run with \`${snap.test.command}\` after this change and ${result}. Any failure caused by the change is a finding. Output${lines.length > TEST_OUTPUT_LINES ? ` (last ${TEST_OUTPUT_LINES} lines)` : ""}:\n\`\`\`\n${tail}\n\`\`\``;
+          testsBlock = `The project's tests ran with \`${snap.test.command}\` and ${result}. Report failures relevant to the scope of this review. Output${lines.length > TEST_OUTPUT_LINES ? ` (last ${TEST_OUTPUT_LINES} lines)` : ""}:\n\`\`\`\n${tail}\n\`\`\``;
         }
         const prompt = fillPrompt(config.root, "review", {
           task: state.task,
           workspace: workspace.notes.reviewer,
           guides,
-          changes: (state.buildsDone ?? round - 1) === 0
-            ? `This run started with a review of the existing code: nothing has been changed yet, so there is no diff. For this first review, review the existing code the request is about (this overrides the line below about only reviewing changed code). The coordinator's focus for this review:\n<review_focus>\n${state.instructions ?? ""}\n</review_focus>${workspace.tracksChanges ? "" : "\nInspect it through the MCP tools, read only."}`
+          scope: initialReview
+            ? "Inspect the existing code identified in the user's request. Read its implementation and relevant dependencies directly, and report findings within the requested scope."
+            : "Review the code changed or added for this task and how it fits with the rest. Check that the changes fulfill the request. Limit findings to problems in this work.",
+          changes: initialReview
+            ? ""
             : workspace.tracksChanges
-            ? `All changes made so far in this task (a git diff against the code before the task started):\n\`\`\`diff\n${readFileSync(snap.diffFile, "utf8")}\n\`\`\``
-            : `There is no diff for this run: the work was done live through MCP tools. What the builder reported doing this round:\n<builder_report>\n${state.currentBuild?.summary ?? ""}\n</builder_report>\nCheck the real current state through the tools.`,
+              ? `All changes made so far in this task (a git diff against the code before the task started):\n\`\`\`diff\n${readFileSync(snap.diffFile, "utf8")}\n\`\`\``
+              : `There is no diff for this run: the work was done live through MCP tools. What the builder reported doing this round:\n<builder_report>\n${state.currentBuild?.summary ?? ""}\n</builder_report>\nCheck the real current state through the tools.`,
           tests: testsBlock,
           previous: previousBlock,
           dismissed: dismissedBlock,

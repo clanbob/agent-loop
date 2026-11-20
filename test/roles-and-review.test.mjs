@@ -10,7 +10,9 @@ import { runReviewer } from "../src/agents/reviewer.ts";
 import { runBuilder } from "../src/agents/builder.ts";
 import { modelCatalog } from "../src/models.ts";
 import { AgentLoop } from "../src/loop.ts";
+import { commitAll, ensureRepo } from "../src/git.ts";
 import { DEFAULT_CHOICES, PROVIDERS, ROLES } from "../src/roles.ts";
+import { folderSpec } from "../src/workspace/folder.ts";
 import { toolsSpec } from "../src/workspace/tools.ts";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -35,7 +37,7 @@ function setup(t) {
   const workspace = toolsSpec(config, "test", [], [], { name: "Inventory", servers: { inventory: { command: "fixture" } }, notes: "" });
   return {
     config, calls: () => readFileSync(trace, "utf8").trim().split("\n").map((line) => JSON.parse(line)),
-    start: (choices, manual = false) => AgentLoop.start(config, "test", "Check the inventory", workspace, hooks, choices, manual),
+    start: (choices, manual = false, task = "Is the inventory total correct?") => AgentLoop.start(config, "test", task, workspace, hooks, choices, manual),
   };
 }
 
@@ -77,14 +79,26 @@ test("when discovery is unavailable the picker has multiple labeled suggestions"
 });
 
 for (const provider of PROVIDERS) {
-  test(`one ${provider} model can plan, review, triage and build`, async (t) => {
+  test(`one ${provider} model can route an ambiguous request, review, triage and build`, async (t) => {
     const env = setup(t);
     const state = await env.start(oneModel(provider)).run();
     assert.equal(state.status, "clean", state.error);
     assert.equal(state.endReason, "no-findings");
     const calls = env.calls();
-    assert.deepEqual(calls.map((c) => c.step), ["plan", "review", "triage", "build", "review"]);
+    assert.deepEqual(calls.map((c) => c.step), ["route", "review", "triage", "build", "review"]);
     assert(calls.every((c) => c.provider === provider && c.model === "custom-model"));
+    const [route, review, triage] = calls;
+    assert.notEqual(route.cwd, review.cwd);
+    assert.doesNotMatch(route.input, /MCP tools|inventory \(fixture\)|files currently in the project/i);
+    assert.match(review.input, /<request>\s*Is the inventory total correct\?\s*<\/request>/);
+    assert.doesNotMatch(review.input, /review_focus|request asks for an inspection/i);
+    assert.match(triage.input, /Incorrect inventory total/);
+    if (provider === "claude") assert.equal(route.args[route.args.indexOf("--tools") + 1], "");
+    if (provider === "codex") assert(route.args.includes("features.shell_tool=false"));
+    if (provider === "antigravity") {
+      const settings = JSON.parse(readFileSync(route.args[route.args.indexOf("--settings") + 1], "utf8"));
+      assert(settings.permissions.deny.includes("read_file(*)"));
+    }
     const build = calls.find((c) => c.step === "build");
     assert.match(build.input, /Incorrect inventory total/);
     assert.doesNotMatch(build.input, /Rename inventory entry/);
@@ -92,6 +106,69 @@ for (const provider of PROVIDERS) {
     if (provider === "claude") assert(build.args.includes("--strict-mcp-config"));
   });
 }
+
+test("a Zone diagnostic sends the original request straight to the reviewer in the project worktree", async (t) => {
+  const { config, calls } = setup(t);
+  const project = path.join(config.dataDir, "project");
+  const scripts = path.join(project, "ReplicatedStorage");
+  mkdirSync(scripts, { recursive: true });
+  const source = "return { activeZones = {} }";
+  writeFileSync(path.join(scripts, "Zone.luau"), source);
+  ensureRepo(project);
+  commitAll(project, "Add Zone module");
+  const workspace = folderSpec(config, "zone-review", project, ["ReplicatedStorage"], [], null);
+  const task = "Run a complete diagnostic review of the zone module. Look for optimizations.";
+  const loop = AgentLoop.start(config, "zone-review", task, workspace, hooks, DEFAULT_CHOICES);
+  const state = await loop.run();
+  assert.equal(state.status, "clean", state.error);
+  assert.equal(state.endReason, "no-findings");
+  assert.equal(state.startMode, "review");
+  assert.deepEqual(state.timeline.map((t) => t.phase), ["prepare", "snapshot", "review", "done"]);
+  const [review] = calls();
+  assert.deepEqual(calls().map((c) => [c.step, c.provider]), [["review", DEFAULT_CHOICES.reviewer.provider]]);
+  assert.equal(review.cwd, workspace.worktree);
+  assert(review.input.includes(task));
+  assert.match(review.input, /Inspect the existing code/);
+  assert.doesNotMatch(review.input, /code changed or added|<review_focus>/);
+  const result = JSON.parse(readFileSync(path.join(loop.runDir, "round-01", "review.json"), "utf8"));
+  assert.equal(result.summary, source);
+});
+
+for (const [task, needsRouting] of [
+  ["Build a review dashboard for the inventory.", false],
+  ["Build: review the inventory and implement a review dashboard.", false],
+  ["Review the inventory and then implement a review dashboard.", true],
+]) {
+  test(`the build plan reaches the builder for "${task}"`, async (t) => {
+    const env = setup(t);
+    const state = await env.start(DEFAULT_CHOICES, false, task).run();
+    assert.equal(state.status, "clean", state.error);
+    assert.equal(state.startMode, "build");
+    const calls = env.calls();
+    assert.deepEqual(calls.map((c) => c.step), [...(needsRouting ? ["route"] : []), "plan", "build", "review", "triage", "build", "review"]);
+    const [plan, build, review] = calls.slice(needsRouting ? 1 : 0);
+    assert.equal(plan.cwd, build.cwd);
+    assert.match(build.input, /Add the requested inventory dashboard to the existing interface/);
+    assert.match(review.input, /Review the code changed or added/);
+    assert.doesNotMatch(review.input, /Add the requested inventory dashboard to the existing interface/);
+  });
+}
+
+test("resuming an older first review drops the judge's saved brief", async (t) => {
+  const env = setup(t);
+  const old = env.start(DEFAULT_CHOICES);
+  mkdirSync(old.runDir, { recursive: true });
+  mkdirSync(old.state.workspace.workDir, { recursive: true });
+  writeFileSync(path.join(old.runDir, "run.json"), JSON.stringify({
+    ...old.state, status: "stopped", pid: null, baselineCommit: "start", startMode: "review",
+    cursor: { round: 1, step: "review" }, instructions: "Old judge verdict about an unrelated script.",
+  }));
+  const state = await AgentLoop.resume(env.config, old.state.id, hooks).run();
+  assert.equal(state.status, "clean", state.error);
+  assert.equal(state.rounds[0].instructions, "");
+  assert.deepEqual(env.calls().map((c) => c.step), ["review", "triage", "build", "review"]);
+  assert.doesNotMatch(env.calls()[0].input, /Old judge verdict/);
+});
 
 test("file builders use the selected provider's edit mode in the project directory", async (t) => {
   const env = setup(t);
@@ -145,9 +222,9 @@ async function pauseAtReview(loop) {
 test("manual decisions survive a stop, require submission, and send only chosen findings", async (t) => {
   const env = setup(t);
   const choices = { judge: DEFAULT_CHOICES.reviewer, reviewer: DEFAULT_CHOICES.builder, builder: DEFAULT_CHOICES.judge };
-  const loop = env.start(choices, true);
+  const loop = env.start(choices, true, "Can you do a complete diagnostic scan and review of the zone module?");
   const first = await pauseAtReview(loop);
-  assert.deepEqual(env.calls().map((c) => c.step), ["plan", "review"]);
+  assert.deepEqual(env.calls().map((c) => c.step), ["review"]);
   assert.throws(() => loop.submitReview(1), /every finding/);
   assert.throws(() => loop.setReviewVerdict(2, "F1", "fix"), /no longer/);
   assert.throws(() => loop.setReviewVerdict(1, "unknown", "skip"), /Unknown finding/);
@@ -160,7 +237,7 @@ test("manual decisions survive a stop, require submission, and send only chosen 
   const second = await pauseAtReview(resumed);
   assert.deepEqual(resumed.state.rounds[0].reviewDraft.map((v) => v.verdict), ["skip", "skip"]);
   resumed.setReviewVerdict(1, "F1", "fix");
-  assert.equal(env.calls().length, 2);
+  assert.equal(env.calls().length, 1);
   // A failed checkpoint must leave the gate open so the same submission can be retried.
   const temporaryStateFile = path.join(resumed.runDir, "run.json.tmp");
   mkdirSync(temporaryStateFile);
@@ -174,20 +251,20 @@ test("manual decisions survive a stop, require submission, and send only chosen 
   assert.deepEqual(state.agents, choices);
   assert.deepEqual(state.rounds[0].decisions.map((d) => d.verdict), ["fix", "skip"]);
   const calls = env.calls();
-  assert.deepEqual(calls.map((c) => c.provider), ["codex", "claude", "antigravity", "claude"]);
-  assert.equal(calls[2].model, "gemini-4-neon-medium");
-  assert.match(calls[2].input, /Incorrect inventory total/);
-  assert.doesNotMatch(calls[2].input, /Rename inventory entry/);
+  assert.deepEqual(calls.map((c) => c.provider), ["claude", "antigravity", "claude"]);
+  assert.equal(calls[1].model, "gemini-4-neon-medium");
+  assert.match(calls[1].input, /Incorrect inventory total/);
+  assert.doesNotMatch(calls[1].input, /Rename inventory entry/);
 });
 
 test("submitting all Skip finishes without a triage or build call", async (t) => {
   const env = setup(t);
-  const loop = env.start(DEFAULT_CHOICES, true);
+  const loop = env.start(DEFAULT_CHOICES, true, "Review: Build a list of inventory problems.");
   const { done } = await pauseAtReview(loop);
   for (const f of loop.state.rounds[0].findings) loop.setReviewVerdict(1, f.id, "skip");
   loop.submitReview(1);
   const result = await done;
   assert.equal(result.status, "clean", result.error);
   assert.equal(result.endReason, "rest-skipped");
-  assert.deepEqual(env.calls().map((c) => c.step), ["plan", "review"]);
+  assert.deepEqual(env.calls().map((c) => c.step), ["review"]);
 });

@@ -62,7 +62,7 @@ export function createRobloxWorkspace(baseConfig: Config, spec: RobloxSpec): Wor
     notes: {
       judge: `The code is a Roblox (Luau) game that lives in an open Roblox Studio place. The builder edits it live in Studio.
 ${mirrorNote}
-Look at it to find the existing modules the builder should reuse, and name scripts by their Studio path.
+Refer to scripts by their Studio path.
 The builder may only create or edit scripts under these Studio locations:
 ${scope}${toolsNote(spec.environment, "others")}`,
       builder: `The code is a Roblox (Luau) game in the open Roblox Studio place. This run was started by the user, and starting it is their approval to create and edit scripts in the place for this task, but only under these Studio locations:
@@ -71,8 +71,8 @@ Do not create, edit or delete anything outside them. If the task truly needs a c
 Make every change in Studio through the Roblox_Studio tools. ${mirrorNote} You may read it to find existing code, but editing it does nothing.
 You may start a play test to check your work, but always stop it again and leave Studio in Edit mode when you finish.
 In your final report, name every script you created, edited or deleted by its Studio path.${toolsNote(spec.environment, "builder")}`,
-      reviewer: `The code is a Roblox (Luau) game. Your working folder is a read-only snapshot of every script in the place, one file per script, laid out by Studio explorer path. ".server.luau" is a Script, ".client.luau" a LocalScript, plain ".luau" a ModuleScript. A folder with the same name as a script holds that script's children. Read any file you need, especially the existing modules the new code uses, to check that it calls their real API.
-The code was only allowed to change scripts under:
+      reviewer: `The code is a Roblox (Luau) game. Your working folder is a read-only snapshot of every script in the place, one file per script, laid out by Studio explorer path. ".server.luau" is a Script, ".client.luau" a LocalScript, plain ".luau" a ModuleScript. A folder with the same name as a script holds that script's children. Follow module references in the snapshot to verify how the scripts interact.
+The builder's edit scope is:
 ${scope}`,
     },
 

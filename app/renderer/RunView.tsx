@@ -239,7 +239,7 @@ export function RunView({ id, onDeleted }: { id: string; onDeleted: () => void }
             )}
             {state.instructions && (
               <>
-                <h3>{state.startMode === "review" && (state.buildsDone ?? 0) === 0 ? "Initial review focus" : "Latest instructions"}</h3>
+                <h3>Latest instructions</h3>
                 <pre className="prose-pre">{state.instructions}</pre>
               </>
             )}

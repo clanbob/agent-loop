@@ -60,7 +60,6 @@ export function createFolderWorkspace(config: Config, spec: FolderSpec): Workspa
     },
     notes: {
       judge: `${where}
-Read the code there to understand the project and find what the builder should reuse; mention files by their path in the project.
 Changes are allowed in:
 ${scope}${toolsNote(spec.environment, "others")}`,
       builder: `${where}
@@ -69,8 +68,8 @@ ${scope}
 If the task truly needs a change elsewhere, do not make it: say so in your final report instead.
 Do not commit, switch branches or touch other worktrees; the loop commits your work after each round.
 You may run the project's build and tests to check your work.${toolsNote(spec.environment, "builder")}`,
-      reviewer: `Your working folder is the project's code on the task's branch. Read any file you need, especially existing code the change uses, to check it is used correctly.
-Changes were only allowed in:
+      reviewer: `Your working folder contains the project's code on the task's branch. Follow references to existing code to verify its behaviour.
+The builder's edit scope is:
 ${scope}${toolsNote(spec.environment, "others")}`,
     },
 
