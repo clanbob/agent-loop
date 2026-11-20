@@ -317,7 +317,7 @@ export function EnvironmentDialog({
           <span className="hint">
             {isProjectBuiltIn
               ? "Runs work on a new branch of the project."
-              : "With a project: code goes on a new branch and the tools help Claude. Without one: Claude works only through the tools, and Codex reviews through them."}
+              : "With a project: code goes on a new branch and the tools help the builder. Without one: the builder works only through the tools, and the reviewer checks the work through them."}
           </span>
         </label>
 

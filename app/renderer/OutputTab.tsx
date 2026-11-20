@@ -5,9 +5,9 @@ import { Segmented } from "./Segmented.tsx";
 
 const FILTERS = [
   ["all", "All"],
-  ["judge", "Antigravity"],
-  ["claude", "Claude"],
-  ["codex", "Codex"],
+  ["judge", "Judge"],
+  ["builder", "Builder"],
+  ["reviewer", "Reviewer"],
   ["loop", "Loop"],
 ] as const;
 
@@ -17,7 +17,7 @@ export function OutputTab({ logs, live }: { logs: LogLine[]; live: boolean }) {
   const box = useRef<HTMLDivElement>(null);
 
   const shown = useMemo(
-    () => (filter === "all" ? logs : logs.filter((l) => (filter === "loop" ? l.agent === "loop" || l.agent === "setup" : l.agent === filter))),
+    () => filter === "all" ? logs : logs.filter((line) => line.agent === filter || (filter === "loop" && line.agent === "setup")),
     [logs, filter],
   );
 
@@ -45,7 +45,7 @@ export function OutputTab({ logs, live }: { logs: LogLine[]; live: boolean }) {
         {shown.length === 0 && (
           <p className="muted">
             {live
-              ? "Nothing yet. Claude shows each action as it works; Codex and Antigravity show their output when they report."
+              ? "Waiting for agent output."
               : "No output was kept for this run. Live output is only kept while the app is open."}
           </p>
         )}

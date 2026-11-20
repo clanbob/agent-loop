@@ -1,15 +1,7 @@
 import { writeFileSync } from "node:fs";
 import path from "node:path";
-import { runProcess } from "../proc.ts";
-import { judgeModelId } from "../models.ts";
-import { AgentError, extractJson, failure, type Finding, type StepContext } from "./types.ts";
-
-const AGENT = "Antigravity (judge)";
-
-const INLINE_PROMPT_CHARS = 24_000;
-
-const BLOCKED_NOTE =
-  "\n\nNote: your last attempt used a tool that is blocked here, which ended your turn with no answer. Do not run any shell commands this time, and only read files inside the project folder.";
+import { askStructured } from "./structured.ts";
+import type { Finding, StepContext } from "./types.ts";
 
 export interface Decision {
   id: string;
@@ -80,71 +72,5 @@ async function ask<T>(
   schemaName: string,
   validate: (answer: T) => void,
 ): Promise<T> {
-  const promptFile = path.join(ctx.roundDir, `${label}-prompt.md`);
-  const logFile = path.join(ctx.roundDir, `${label}.log`);
-  writeFileSync(promptFile, prompt, "utf8");
-
-  const schemaFile = path.join(ctx.config.root, "schemas", schemaName);
-  const basePrompt =
-    prompt.length <= INLINE_PROMPT_CHARS
-      ? prompt
-      : `Read the file ${promptFile} and do exactly what it says. Reply only with the JSON it asks for.`;
-
-  for (let attempt = 1; ; attempt++) {
-    const text = attempt === 1 ? basePrompt : `${basePrompt}${BLOCKED_NOTE}`;
-    const outcome = await runOnce<T>(ctx, text, schemaFile, logFile, validate);
-    if ("answer" in outcome) return outcome.answer;
-    if (attempt >= 2 || !outcome.commandDenied) throw outcome.error;
-  }
-}
-
-async function runOnce<T>(
-  ctx: StepContext,
-  text: string,
-  schemaFile: string,
-  logFile: string,
-  validate: (answer: T) => void,
-): Promise<{ answer: T } | { error: AgentError; commandDenied: boolean }> {
-  const { config, runDir, workDir } = ctx;
-  const args = [
-    "--print",
-    text,
-    "--output-format",
-    "json",
-    "--json-schema",
-    schemaFile,
-    "--mode",
-    "plan",
-    "--add-dir",
-    runDir,
-    "--add-dir",
-    workDir,
-    ...[...new Set(ctx.guides.map((g) => path.dirname(g)))].flatMap((dir) => ["--add-dir", dir]),
-  ];
-  if (config.agents.judge.model) args.push("--model", judgeModelId(config.agents.judge.model, config.agents.judge.effort));
-
-  const result = await runProcess({
-    command: config.agents.judge.command,
-    args,
-    cwd: runDir,
-    logFile,
-    timeoutMs: config.limits.agentTimeoutMinutes * 60_000,
-    signal: ctx.signal,
-    onLine: ctx.onLine,
-  });
-
-  if (result.aborted) throw new AgentError(AGENT, "stopped", logFile);
-  if (result.timedOut) throw new AgentError(AGENT, "timed out", logFile);
-  const output = `${result.stdout}\n${result.stderr}`;
-  if (result.code !== 0) throw failure(AGENT, `exited with code ${result.code}`, logFile, output);
-
-  try {
-    const answer = extractJson<T>(result.stdout, "instructions");
-    validate(answer);
-    return { answer };
-  } catch (err) {
-    const error = failure(AGENT, `could not read its answer: ${(err as Error).message}`, logFile, output);
-    if (error.limit) throw error;
-    return { error, commandDenied: /"denied_actions"\s*:\s*\[\s*\{/.test(output) };
-  }
+  return askStructured<T>(ctx, prompt, { role: "judge", label, schema: schemaName, key: "instructions", validate });
 }

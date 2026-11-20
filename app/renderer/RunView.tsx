@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState } from "react";
 import type { LogLine, RunDetail } from "../shared/api.ts";
+import { DEFAULT_CHOICES, PROVIDER_NAMES } from "../../src/roles.ts";
 import { api, errorText } from "./api.ts";
 import { STATUS_LABEL, basename, duration, phaseLabel, runDate, runTitle, timedSteps } from "./format.ts";
 import { RoundsTab } from "./RoundsTab.tsx";
@@ -150,6 +151,13 @@ export function RunView({ id, onDeleted }: { id: string; onDeleted: () => void }
         </div>
       )}
 
+      {pending?.kind === "review" && (
+        <div className="banner banner-warn">
+          <strong>Round {pending.round} is waiting for your review.</strong>
+          {tab !== "rounds" && <button className="btn" onClick={() => setTab("rounds")}>Review findings</button>}
+        </div>
+      )}
+
       {pending?.kind === "limit" && (
         <div className="banner banner-warn">
           <div>
@@ -206,7 +214,12 @@ export function RunView({ id, onDeleted }: { id: string; onDeleted: () => void }
       </div>
 
       <section className="tab-body">
-        {tab === "rounds" && <RoundsTab state={state} steps={steps} live={live} now={now} />}
+        {tab === "rounds" && <RoundsTab state={state} steps={steps} live={live} now={now}
+          review={pending?.kind === "review" ? {
+            round: pending.round, busy,
+            choose: (finding, verdict) => act(() => api.setReviewVerdict(id, pending.round, finding, verdict)),
+            submit: () => act(() => api.submitReview(id, pending.round)),
+          } : null} />}
         {tab === "output" && <OutputTab logs={logs} live={live} />}
         {tab === "changes" && <ChangesTab id={id} state={state} />}
         {tab === "task" && (
@@ -218,15 +231,15 @@ export function RunView({ id, onDeleted }: { id: string; onDeleted: () => void }
                 <h3>Starting point</h3>
                 <p className="prose-pre">
                   {state.startMode === "review"
-                    ? "Review first: Codex reviewed the existing code before Claude changed anything."
-                    : "Build first: Claude built before Codex reviewed."}
+                    ? "The reviewer inspected the existing code first."
+                    : "The builder made changes before the first review."}
                   {state.startReason && <span className="muted"> {state.startReason}</span>}
                 </p>
               </>
             )}
             {state.instructions && (
               <>
-                <h3>{state.startMode === "review" && (state.buildsDone ?? 0) === 0 ? "Review focus from Antigravity" : "Latest instructions from Antigravity"}</h3>
+                <h3>{state.startMode === "review" && (state.buildsDone ?? 0) === 0 ? "Initial review focus" : "Latest instructions"}</h3>
                 <pre className="prose-pre">{state.instructions}</pre>
               </>
             )}
@@ -272,9 +285,9 @@ export function RunView({ id, onDeleted }: { id: string; onDeleted: () => void }
             <dl className="kv">
               {(
                 [
-                  ["Antigravity", "judge"],
-                  ["Claude", "builder"],
-                  ["Codex", "reviewer"],
+                  ["Judge", "judge"],
+                  ["Builder", "builder"],
+                  ["Reviewer", "reviewer"],
                 ] as const
               ).map(([name, key]) => {
                 const choice = state.agents?.[key];
@@ -282,7 +295,7 @@ export function RunView({ id, onDeleted }: { id: string; onDeleted: () => void }
                   <Fragment key={key}>
                     <dt>{name}</dt>
                     <dd>
-                      {choice?.model ?? "default model"}
+                      {PROVIDER_NAMES[choice?.provider ?? DEFAULT_CHOICES[key].provider]} · {choice?.model ?? "default model"}
                       {choice?.effort ? ` · effort ${choice.effort}` : ""}
                     </dd>
                   </Fragment>
@@ -308,8 +321,8 @@ function Outcome({ detail, busy, onAction }: { detail: RunDetail; busy: boolean;
           <div>
             <strong>
               {state.endReason === "rest-skipped"
-                ? "Done: the judge ruled every remaining finding not worth fixing."
-                : "Done: Codex reported no findings."}
+                ? "Every remaining finding was marked Skip."
+                : "The reviewer reported no findings."}
             </strong>
             {state.resultNote && <pre className="prose-pre small">{state.resultNote}</pre>}
           </div>
@@ -332,7 +345,7 @@ function Outcome({ detail, busy, onAction }: { detail: RunDetail; busy: boolean;
         {skipped.length > 0 && (
           <details className="skipped">
             <summary>
-              {skipped.length} finding{skipped.length === 1 ? "" : "s"} the judge skipped
+              {skipped.length} finding{skipped.length === 1 ? "" : "s"} marked Skip
             </summary>
             <ul>
               {skipped.map((s) => (

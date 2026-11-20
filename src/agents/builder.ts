@@ -1,8 +1,9 @@
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { runProcess } from "../proc.ts";
 import type { BuilderSetup } from "../workspace/types.ts";
 import { AgentError, extractJson, failure, type StepContext } from "./types.ts";
+import { askStructured } from "./structured.ts";
 
 const AGENT = "Claude (builder)";
 
@@ -85,6 +86,18 @@ export async function runBuilder(
   session: { id: string; resume: boolean },
 ): Promise<BuildResult> {
   const { config, roundDir, runDir, workDir } = ctx;
+  if (config.agents.builder.provider !== "claude") {
+    const instructions = readFileSync(systemPromptFile, "utf8");
+    const { summary } = await askStructured<{ summary: string }>(ctx, `${instructions}\n\n${prompt}`, {
+      role: "builder", label: "build", schema: "build.schema.json", key: "summary",
+      servers: setup.mcpServers, builder: setup,
+      validate(answer) {
+        if (typeof answer.summary !== "string") throw new Error("missing build report");
+      },
+    });
+    writeFileSync(path.join(roundDir, "build-report.md"), summary);
+    return { summary, sessionId: session.id, costUsd: null };
+  }
   const logFile = path.join(roundDir, "build.log");
   writeFileSync(path.join(roundDir, "build-prompt.md"), prompt, "utf8");
 

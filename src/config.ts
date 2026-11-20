@@ -1,8 +1,10 @@
 import { readFileSync, existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DEFAULT_CHOICES, type AgentChoice, type AgentChoices, type Provider, type Role } from "./roles.ts";
 
 export interface AgentConfig {
+  provider: Provider;
   command: string;
   model: string | null;
   effort: string | null;
@@ -66,7 +68,8 @@ export function loadConfig(root: string, configFile?: string, dataDir: string = 
   if (!existsSync(file)) throw new Error(`Missing config file: ${file}`);
   const raw = JSON.parse(readFileSync(file, "utf8"));
 
-  const agent = (a: AgentConfig & { command: PerPlatform<string> }, fallback: string): AgentConfig => ({
+  const agent = (a: AgentConfig & { command: PerPlatform<string> }, fallback: string, provider: Provider): AgentConfig => ({
+    provider,
     command: expandEnv(forPlatform(a?.command, fallback)),
     model: a?.model ?? null,
     effort: a?.effort ?? null,
@@ -78,9 +81,9 @@ export function loadConfig(root: string, configFile?: string, dataDir: string = 
     root,
     dataDir,
     agents: {
-      judge: agent(raw.agents?.judge, "agy"),
-      builder: agent(raw.agents?.builder, "claude"),
-      reviewer: agent(raw.agents?.reviewer, "codex"),
+      judge: agent(raw.agents?.judge, "agy", DEFAULT_CHOICES.judge.provider),
+      builder: agent(raw.agents?.builder, "claude", DEFAULT_CHOICES.builder.provider),
+      reviewer: agent(raw.agents?.reviewer, "codex", DEFAULT_CHOICES.reviewer.provider),
     },
     folder: {
       guides: forPlatform<string[]>(folder.guides, []).map(expandEnv),
@@ -96,5 +99,25 @@ export function loadConfig(root: string, configFile?: string, dataDir: string = 
     },
     deleteRunFolder: raw.deleteRunFolder ?? "onClean",
     limits: raw.limits,
+  };
+}
+
+export function withAgentChoices(config: Config, choices: AgentChoices | null | undefined): Config {
+  if (!choices) return config;
+  const providers = Object.values(config.agents);
+  function pick(role: Role, choice?: AgentChoice): AgentConfig {
+    if (!choice) return config.agents[role];
+    const provider = choice.provider ?? DEFAULT_CHOICES[role].provider;
+    const base = providers.find((agent) => agent.provider === provider);
+    if (!base) throw new Error(`Unknown provider for ${role}: ${provider}`);
+    return { ...base, model: choice.model?.trim() || base.model, effort: choice.effort };
+  }
+  return {
+    ...config,
+    agents: {
+      judge: pick("judge", choices.judge),
+      builder: pick("builder", choices.builder),
+      reviewer: pick("reviewer", choices.reviewer),
+    },
   };
 }

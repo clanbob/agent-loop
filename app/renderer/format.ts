@@ -9,9 +9,9 @@ export const STATUS_LABEL: Record<DisplayStatus, string> = {
 };
 
 export const AGENT_LABEL: Record<string, string> = {
-  judge: "Antigravity",
-  claude: "Claude",
-  codex: "Codex",
+  judge: "Judge",
+  builder: "Builder",
+  reviewer: "Reviewer",
   loop: "Loop",
   setup: "Loop",
 };
@@ -21,15 +21,17 @@ export function phaseLabel(phase: Phase, round: number): string {
     case "prepare":
       return "Preparing workspace";
     case "judge":
-      return round === 0 ? "Antigravity plans the work" : "Antigravity judges the findings";
+      return round === 0 ? "Judge plans the work" : "Judge evaluates findings";
     case "build":
-      return "Claude builds";
+      return "Builder implements changes";
     case "snapshot":
       return "Saving a snapshot";
     case "test":
       return "Running tests";
     case "review":
-      return "Codex reviews";
+      return "Reviewer checks the work";
+    case "manual-review":
+      return "Waiting for your review";
     case "paused":
       return "Paused: out of usage";
     case "done":
@@ -43,8 +45,8 @@ export function phaseLabel(phase: Phase, round: number): string {
 
 export const PHASE_AGENT: Partial<Record<Phase, string>> = {
   judge: "judge",
-  build: "claude",
-  review: "codex",
+  build: "builder",
+  review: "reviewer",
 };
 
 export function duration(ms: number): string {

@@ -2,7 +2,7 @@
   "name": "agent-loop",
   "version": "0.1.0",
   "private": true,
-  "description": "Desktop app that loops Antigravity (judge), Claude Code (builder) and Codex (reviewer) on a coding task until the review is clean.",
+  "description": "Desktop app for iterative building and review with Antigravity, Claude Code and Codex.",
   "type": "module",
   "engines": {
     "node": ">=23.6"
@@ -16,6 +16,7 @@
     "runs": "node src/cli.ts runs",
     "export": "node src/cli.ts export",
     "check": "node src/cli.ts check",
+    "test": "node --test test/*.test.mjs",
     "typecheck": "tsc --noEmit",
     "icon": "electron scripts/make-icon.cjs",
     "dist": "node scripts/build-app.mjs && electron-builder --win",

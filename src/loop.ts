@@ -1,10 +1,11 @@
-import { EventEmitter } from "node:events";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { EventEmitter, once } from "node:events";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import type { Config } from "./config.ts";
+import { withAgentChoices, type Config } from "./config.ts";
+import type { AgentChoices, Role } from "./roles.ts";
 import { fillPrompt } from "./prompts.ts";
-import { runJudgeStart, runTriage, type Decision } from "./agents/judge.ts";
+import { runJudgeStart, runTriage, type Decision, type Triage } from "./agents/judge.ts";
 import { runBuilder, writeBuilderMcpConfig } from "./agents/builder.ts";
 import { runReviewer } from "./agents/reviewer.ts";
 import { AgentError, type Finding, type StepContext } from "./agents/types.ts";
@@ -12,9 +13,11 @@ import { createWorkspace, type Workspace, type WorkspaceSpec } from "./workspace
 import { runTests } from "./tests.ts";
 import { git } from "./git.ts";
 
-export type Phase = "prepare" | "snapshot" | "test" | "judge" | "build" | "review" | "paused" | "done" | "stopped" | "failed";
+export type { AgentChoice, AgentChoices } from "./roles.ts";
 
-export type Step = "prepare" | "judge-start" | "build" | "snapshot" | "review" | "repeat-check" | "judge-triage";
+export type Phase = "prepare" | "snapshot" | "test" | "judge" | "build" | "review" | "manual-review" | "paused" | "done" | "stopped" | "failed";
+
+export type Step = "prepare" | "judge-start" | "build" | "snapshot" | "review" | "repeat-check" | "judge-triage" | "manual-review";
 
 export interface RoundRecord {
   round: number;
@@ -25,6 +28,7 @@ export interface RoundRecord {
   testExitCode: number | null;
   findings: Finding[];
   decisions: Decision[] | null;
+  reviewDraft?: Pick<Decision, "id" | "verdict">[];
   costUsd: number | null;
 }
 
@@ -40,12 +44,6 @@ export interface TimelineEntry {
   at: string;
 }
 
-export interface TimelineEntry {
-  phase: Phase;
-  round: number;
-  at: string;
-}
-
 export interface LimitPause {
   agent: string;
   message: string;
@@ -53,19 +51,12 @@ export interface LimitPause {
   round: number;
 }
 
-export type AgentChoice = { model: string | null; effort: string | null };
-
-export interface AgentChoices {
-  judge: AgentChoice;
-  builder: AgentChoice;
-  reviewer: AgentChoice;
-}
-
 export interface RunState {
   id: string;
   task: string;
   workspace: WorkspaceSpec;
   agents: AgentChoices | null;
+  manualReview?: boolean;
   status: "running" | "clean" | "stopped" | "failed";
   cursor: { round: number; step: Step };
   baselineCommit: string;
@@ -111,6 +102,9 @@ export interface LoopEvents {
   agentLine: [agent: string, line: string];
   round: [record: RoundRecord];
   triage: [round: number, decisions: Decision[]];
+  manualReview: [record: RoundRecord, signal: AbortSignal];
+  reviewChanged: [];
+  reviewSubmitted: [];
   finished: [state: RunState];
 }
 
@@ -205,23 +199,6 @@ function readState(runDir: string): RunState {
   return JSON.parse(readFileSync(path.join(runDir, "run.json"), "utf8")) as RunState;
 }
 
-function withAgentChoices(config: Config, choices: AgentChoices | null | undefined): Config {
-  if (!choices) return config;
-  const pick = (base: Config["agents"]["judge"], choice: AgentChoice | undefined) => ({
-    ...base,
-    model: choice?.model || base.model,
-    effort: choice?.effort || base.effort,
-  });
-  return {
-    ...config,
-    agents: {
-      judge: pick(config.agents.judge, choices.judge),
-      builder: pick(config.agents.builder, choices.builder),
-      reviewer: pick(config.agents.reviewer, choices.reviewer),
-    },
-  };
-}
-
 export function newRunId(): string {
   return new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 }
@@ -262,7 +239,6 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
 
   private constructor(config: Config, hooks: LoopHooks, state: RunState, isNew: boolean) {
     super();
-    this.config = config;
     this.hooks = hooks;
     this.state = state;
     this.runDir = path.join(runsDir(config), state.id);
@@ -278,12 +254,19 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
     workspace: WorkspaceSpec,
     hooks: LoopHooks,
     agents: AgentChoices | null = null,
+    manualReview = false,
   ): AgentLoop {
+    const selected = withAgentChoices(config, agents).agents;
+    const choice = (role: Role) => {
+      const { provider, model, effort } = selected[role];
+      return { provider, model, effort };
+    };
     const state: RunState = {
       id,
       task,
       workspace,
-      agents,
+      agents: { judge: choice("judge"), builder: choice("builder"), reviewer: choice("reviewer") },
+      manualReview,
       status: "running",
       cursor: { round: 0, step: "prepare" },
       baselineCommit: "",
@@ -342,13 +325,70 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
     this.abort.abort();
   }
 
+  get pendingReviewRound(): number | null {
+    const { cursor, status, rounds } = this.state;
+    if (status !== "running" || cursor.step !== "manual-review" || this.abort.signal.aborted) return null;
+    const record = rounds.find((r) => r.round === cursor.round);
+    return record?.decisions === null ? cursor.round : null;
+  }
+
+  private pendingReview(round: number): RoundRecord {
+    if (typeof round !== "number" || this.pendingReviewRound !== round) throw new Error("This round is no longer waiting for review.");
+    return this.state.rounds.find((r) => r.round === round)!;
+  }
+
+  private saveReview(record: RoundRecord, update: Partial<Pick<RoundRecord, "reviewDraft" | "decisions">>): void {
+    const rounds = this.state.rounds.map((r) => r === record ? { ...r, ...update } : r);
+    this.save({ ...this.state, rounds });
+    Object.assign(record, update);
+  }
+
+  setReviewVerdict(round: number, id: string, verdict: Decision["verdict"]): void {
+    const record = this.pendingReview(round);
+    if (!record.findings.some((f) => f.id === id)) throw new Error("Unknown finding.");
+    if (verdict !== "fix" && verdict !== "skip") throw new Error("Choose Fix or Skip.");
+    const reviewDraft = [...(record.reviewDraft ?? []).filter((d) => d.id !== id), { id, verdict }];
+    this.saveReview(record, { reviewDraft });
+    this.emit("reviewChanged");
+  }
+
+  submitReview(round: number): void {
+    const record = this.pendingReview(round);
+    const draft = new Map(record.reviewDraft?.map((d) => [d.id, d.verdict]));
+    const decisions = record.findings.map(({ id }) => {
+      const verdict = draft.get(id);
+      if (!verdict) throw new Error("Choose Fix or Skip for every finding before submitting.");
+      return { id, verdict, reason: `You marked this finding ${verdict === "fix" ? "Fix" : "Skip"}.` };
+    });
+    this.saveReview(record, { decisions, reviewDraft: undefined });
+    this.emit("reviewSubmitted");
+  }
+
+  private async manualTriage(record: RoundRecord): Promise<Triage> {
+    // A restart after submission but before the next step reuses the saved decisions.
+    if (!record.decisions) {
+      const submitted = once(this, "reviewSubmitted", { signal: this.abort.signal });
+      this.phase("manual-review", record.round);
+      this.emit("manualReview", record, this.abort.signal);
+      await submitted;
+      this.checkStopped();
+    }
+    const fixes = toFix(record);
+    return {
+      decisions: record.decisions!,
+      instructions: fixes.length ? `Fix the selected findings: ${fixes.map((f) => f.id).join(", ")}.` : "",
+    };
+  }
+
   private phase(phase: Phase, round: number): void {
     (this.state.timeline ??= []).push({ phase, round, at: new Date().toISOString() });
     this.emit("phase", phase, round);
   }
 
-  private save(): void {
-    writeFileSync(path.join(this.runDir, "run.json"), JSON.stringify(this.state, null, 2), "utf8");
+  private save(state = this.state): void {
+    const file = path.join(this.runDir, "run.json");
+    writeFileSync(`${file}.tmp`, JSON.stringify(state, null, 2), "utf8");
+    renameSync(`${file}.tmp`, file);
   }
 
   private context(roundDir: string, agent: string): StepContext {
@@ -438,12 +478,33 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
     return this.state;
   }
 
+  private judgeTriage(record: RoundRecord, guides: string): Promise<Triage> {
+    const { round } = record;
+    this.phase("judge", round);
+    const earlierSkips = skippedSoFar(this.state.rounds.filter((r) => r.round < round));
+    const prompt = fillPrompt(this.config.root, "judge-triage", {
+      round: String(round),
+      task: this.state.task,
+      builderSummary: record.builderSummary,
+      findings: formatFindings(record.findings),
+      dismissed:
+        earlierSkips.length > 0
+          ? `Findings you ruled "skip" in earlier rounds (rule the same way on a finding that is just one of these again):\n${earlierSkips.map((s) => `- ${s.finding.file}: ${s.finding.issue} (your reason: ${s.reason})`).join("\n")}`
+          : "",
+      workspace: this.workspace.notes.judge,
+      guides,
+    });
+    return this.withLimitPause(round, () =>
+      runTriage(this.context(this.roundDir(round), "judge"), prompt, record.findings),
+    );
+  }
+
   private async loop(): Promise<void> {
     const { config, state, workspace } = this;
     const guides = guidesBlock(state.workspace.guides);
 
     const setupDir = this.roundDir(0);
-    writeBuilderMcpConfig(this.runDir, workspace.builder);
+    if (config.agents.builder.provider === "claude") writeBuilderMcpConfig(this.runDir, workspace.builder);
     const systemPromptFile = path.join(this.runDir, "builder-system.md");
     writeFileSync(
       systemPromptFile,
@@ -488,7 +549,7 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
       } else if (step === "build") {
         if (round > state.roundsAllowed) {
           const go = await this.hooks.confirmContinue({
-            reason: `${round - 1} rounds done and Codex still reports findings.`,
+            reason: `${round - 1} rounds done and the reviewer still reports findings.`,
             details: toFix(recordFor(round - 1)).map((f) => `[${f.severity}] ${f.file}: ${f.issue}`),
           });
           if (!go) throw new RunStopped(`paused after ${round - 1} rounds and not continued`);
@@ -506,14 +567,16 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
             : buildsDone === 0
               ? fillPrompt(config.root, "build-fix-first", { task: state.task, instructions, findings: fixFindings })
               : fillPrompt(config.root, "build-fix", { round: String(round), instructions, findings: fixFindings });
-        const buildContext = this.context(this.roundDir(round), "claude");
+        const buildContext = this.context(this.roundDir(round), "builder");
         const interrupted = this.resumeInterruptedBuild;
 
         state.buildStarted = true;
         this.save();
         const build = await this.withLimitPause(round, async (retry) => {
           const retrying = retry > 0 || interrupted;
-          const prompt = retrying ? `${RESUME_NOTE}\n\n${buildPrompt}` : buildPrompt;
+          const taskContext = config.agents.builder.provider !== "claude" && buildsDone > 0
+            ? `Original task:\n${state.task}\n\n` : "";
+          const prompt = `${retrying ? RESUME_NOTE + "\n\n" : ""}${taskContext}${buildPrompt}`;
           const resume = buildsDone > 0 || retrying;
           try {
             return await runBuilder(buildContext, workspace.builder, prompt, systemPromptFile, {
@@ -523,7 +586,7 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
           } catch (err) {
             if (!(err instanceof AgentError) || !err.noSession) throw err;
             state.builderSessionId = randomUUID();
-            this.emit("log", "Claude's earlier session was not found; starting a fresh one");
+            this.emit("log", "The builder's earlier session was not found; starting a fresh one");
             return runBuilder(buildContext, workspace.builder, prompt, systemPromptFile, {
               id: state.builderSessionId,
               resume: false,
@@ -554,7 +617,7 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
         const reviewingExisting = (state.buildsDone ?? round - 1) === 0;
         if (workspace.tracksChanges && cumulativeFiles.length === 0 && !reviewingExisting) {
           const go = await this.hooks.confirmContinue({
-            reason: "Claude finished but nothing has changed.",
+            reason: "The builder finished but nothing has changed.",
             details: [(state.currentBuild?.summary ?? "").slice(0, 1500)],
           });
           if (!go) throw new RunStopped("builder made no changes");
@@ -563,7 +626,7 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
         const strays = workspace.tracksChanges ? workspace.outOfScope(roundFiles) : [];
         if (strays.length > 0) {
           const go = await this.hooks.confirmContinue({
-            reason: "Claude changed files outside the allowed scope.",
+            reason: "The builder changed files outside the allowed scope.",
             details: strays,
           });
           if (!go) throw new RunStopped("changes outside scope");
@@ -596,7 +659,7 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
         const dismissed = skippedSoFar(state.rounds);
         const dismissedBlock =
           dismissed.length > 0
-            ? `Findings from earlier rounds that the coordinator ruled not worth fixing. Do not report these again, unless a later change made one of them a serious problem:\n${dismissed.map((s) => `- ${s.finding.file}: ${s.finding.issue}`).join("\n")}`
+            ? `Findings marked Skip in earlier rounds. Do not report these again, unless a later change made one of them a serious problem:\n${dismissed.map((s) => `- ${s.finding.file}: ${s.finding.issue}`).join("\n")}`
             : "";
         let testsBlock = "";
         if (snap.test) {
@@ -623,7 +686,7 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
           dismissed: dismissedBlock,
         });
         const review = await this.withLimitPause(round, () =>
-          runReviewer(this.context(this.roundDir(round), "codex"), prompt, workspace.reviewerServers),
+          runReviewer(this.context(this.roundDir(round), "reviewer"), prompt, workspace.reviewerServers),
         );
 
         const record: RoundRecord = {
@@ -646,26 +709,10 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
           this.phase("done", round);
           return;
         }
-        state.cursor = { round, step: "judge-triage" };
-      } else if (step === "judge-triage") {
-        this.phase("judge", round);
+        state.cursor = { round, step: state.manualReview ? "manual-review" : "judge-triage" };
+      } else if (step === "judge-triage" || step === "manual-review") {
         const record = recordFor(round)!;
-        const earlierSkips = skippedSoFar(state.rounds.filter((r) => r.round < round));
-        const prompt = fillPrompt(config.root, "judge-triage", {
-          round: String(round),
-          task: state.task,
-          builderSummary: record.builderSummary,
-          findings: formatFindings(record.findings),
-          dismissed:
-            earlierSkips.length > 0
-              ? `Findings you ruled "skip" in earlier rounds (rule the same way on a finding that is just one of these again):\n${earlierSkips.map((s) => `- ${s.finding.file}: ${s.finding.issue} (your reason: ${s.reason})`).join("\n")}`
-              : "",
-          workspace: workspace.notes.judge,
-          guides,
-        });
-        const triage = await this.withLimitPause(round, () =>
-          runTriage(this.context(this.roundDir(round), "judge"), prompt, record.findings),
-        );
+        const triage = step === "manual-review" ? await this.manualTriage(record) : await this.judgeTriage(record, guides);
         record.decisions = triage.decisions;
         this.emit("triage", round, triage.decisions);
 

@@ -20,8 +20,7 @@ export function Home({ onNew }: { onNew: () => void }) {
     <div className="page narrow">
       <h1>Agent Loop</h1>
       <p className="lead">
-        Antigravity plans and judges, Claude builds, Codex reviews. The loop repeats until Codex finds nothing, or the
-        judge rules everything left not worth fixing.
+        Choose a model to plan the task, one to build it, and one to review the changes.
       </p>
       <button className="btn btn-primary" onClick={onNew}>
         + New run

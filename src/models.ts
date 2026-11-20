@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DEFAULT_CHOICES, type Provider } from "./roles.ts";
 import type { Config } from "./config.ts";
 import { resolveCommand } from "./proc.ts";
 
@@ -17,19 +18,9 @@ export interface AgentModels {
   defaultEffort: string;
 }
 
-export interface ModelCatalog {
-  judge: AgentModels;
-  builder: AgentModels;
-  reviewer: AgentModels;
-}
+export type ModelCatalog = Record<Provider, AgentModels>;
 
 export const EFFORT_ORDER = ["low", "medium", "high", "xhigh", "max", "ultra"];
-
-export const DEFAULT_CHOICES = {
-  judge: { model: "gemini-4-neon", effort: "medium" },
-  builder: { model: "opus", effort: "medium" },
-  reviewer: { model: "gpt-6.2-astra", effort: "medium" },
-} as const;
 
 const EFFORT_SUFFIX = /-(low|medium|high|xhigh|max|ultra)$/;
 const LABEL_EFFORT = /\s*\((low|medium|high|xhigh|max|ultra)\)\s*$/i;
@@ -46,12 +37,12 @@ function sortEfforts(efforts: Iterable<string>): string[] {
   return [...new Set(efforts)].sort((a, b) => EFFORT_ORDER.indexOf(a) - EFFORT_ORDER.indexOf(b));
 }
 
-export function judgeModelId(model: string, effort: string | null): string {
+export function antigravityModelId(model: string, effort: string | null): string {
   if (!effort || EFFORT_SUFFIX.test(model)) return model;
   return `${model}-${effort}`;
 }
 
-export function splitJudgeModel(id: string): { model: string; effort: string | null } {
+export function splitAntigravityModel(id: string): { model: string; effort: string | null } {
   const match = id.match(EFFORT_SUFFIX);
   return match ? { model: id.slice(0, -match[0].length), effort: match[1] } : { model: id, effort: null };
 }
@@ -68,10 +59,10 @@ function antigravityModels(command: string): Promise<ModelOption[]> {
       if (err) return resolve([]);
       const families = new Map<string, ModelOption>();
       for (const line of stdout.split(/\r?\n/)) {
-        const [rawId, rawLabel] = line.split("\t");
+        const [rawId, rawLabel] = line.trim().split(/\s+(.+)/);
         const id = rawId?.trim();
         if (!id || !rawLabel || id.includes(" ")) continue;
-        const { model, effort } = splitJudgeModel(id);
+        const { model, effort } = splitAntigravityModel(id);
         const family = families.get(model) ?? { id: model, label: rawLabel.trim().replace(LABEL_EFFORT, ""), efforts: [] };
         if (effort) family.efforts = sortEfforts([...family.efforts, effort]);
         families.set(model, family);
@@ -121,7 +112,7 @@ export function modelCatalog(config: Config, refresh = false): Promise<ModelCata
   cached = (async () => {
     const d = DEFAULT_CHOICES;
     return {
-      judge: {
+      antigravity: {
         models: withDefault(await antigravityModels(config.agents.judge.command), {
           id: d.judge.model,
           label: "Gemini 4 Neon",
@@ -130,8 +121,8 @@ export function modelCatalog(config: Config, refresh = false): Promise<ModelCata
         defaultModel: d.judge.model,
         defaultEffort: d.judge.effort,
       },
-      builder: { models: CLAUDE_MODELS, defaultModel: d.builder.model, defaultEffort: d.builder.effort },
-      reviewer: {
+      claude: { models: CLAUDE_MODELS, defaultModel: d.builder.model, defaultEffort: d.builder.effort },
+      codex: {
         models: withDefault(codexModels(), { id: d.reviewer.model, label: "GPT-6.2 Astra", efforts: CLAUDE_EFFORTS }),
         defaultModel: d.reviewer.model,
         defaultEffort: d.reviewer.effort,

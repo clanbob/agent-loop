@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
 import type { AgentChoices, AppInfo, Environment, Setup } from "../shared/api.ts";
 import { api, errorText } from "./api.ts";
 import { basename } from "./format.ts";
-import { DEFAULT_CHOICES, ModelsMenu } from "./ModelsMenu.tsx";
+import { DEFAULT_CHOICES } from "../../src/roles.ts";
+import { ModelsMenu } from "./ModelsMenu.tsx";
 import { EnvironmentDialog } from "./EnvironmentDialog.tsx";
 
 const PREFS_KEY = "agentloop.newrun.v2";
@@ -41,6 +42,7 @@ export function NewRun({ onStarted, onCancel }: { onStarted: (id: string) => voi
   const [scope, setScope] = useState<string[]>([]);
   const [scopeDraft, setScopeDraft] = useState("");
   const [test, setTest] = useState("");
+  const [manualReview, setManualReview] = useState(false);
   const [agents, setAgents] = useState<AgentChoices>(DEFAULT_CHOICES);
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [error, setError] = useState("");
@@ -122,7 +124,7 @@ export function NewRun({ onStarted, onCancel }: { onStarted: (id: string) => voi
     setStarting(true);
     setError("");
     try {
-      const { id } = await api.startRun({ environmentId: env.id, project, task, scope: finalScope, test: mode === "folder" ? test : "", guides: [], agents });
+      const { id } = await api.startRun({ environmentId: env.id, project, task, scope: finalScope, test: mode === "folder" ? test : "", guides: [], agents, manualReview });
       updatePrefs((p) => ({
         ...p,
         environmentId: env.id,
@@ -142,11 +144,11 @@ export function NewRun({ onStarted, onCancel }: { onStarted: (id: string) => voi
 
   const projectHint =
     mode === "folder"
-      ? `Must be a git project. The run works on a new branch in a separate copy, so your own files are not touched.${envTools.length > 0 ? ` Claude also gets ${envTools.length === 1 ? "the" : "these"} MCP tool${envTools.length === 1 ? "" : "s"}: ${envTools.map((t) => t.name).join(", ")}.` : ""}`
+      ? `Must be a git project. The run works on a new branch in a separate copy, so your own files are not touched.${envTools.length > 0 ? ` The builder also gets ${envTools.length === 1 ? "the" : "these"} MCP tool${envTools.length === 1 ? "" : "s"}: ${envTools.map((t) => t.name).join(", ")}.` : ""}`
       : mode === "roblox"
-        ? "No project: edits the place open in Roblox Studio, live. Codex reviews a copy of the scripts. Save a backup of the place first (File → Save to File)."
+        ? "No project: edits the place open in Roblox Studio, live. The reviewer inspects a copy of the scripts. Save a backup of the place first (File → Save to File)."
         : mode === "tools"
-          ? `No project: Claude works only through ${envTools.map((t) => t.name).join(", ")}, and Codex reviews by looking through the same tools, read only.`
+          ? `No project: the builder works only through ${envTools.map((t) => t.name).join(", ")}, and the reviewer inspects by looking through the same tools, read only.`
           : envTools.length === 0 && env?.builtIn === "project"
             ? "Choose a git project. The run works on a new branch in a separate copy, so your own files are not touched."
             : "This environment has no MCP tools, so it needs a project folder.";
@@ -185,6 +187,11 @@ export function NewRun({ onStarted, onCancel }: { onStarted: (id: string) => voi
       </div>
 
       <ModelsMenu scopeLabel={env ? `the ${env.name} environment` : "this environment"} choices={agents} onChange={changeAgents} />
+
+      <label className="field review-option">
+        <span><input type="checkbox" checked={manualReview} onChange={(e) => setManualReview(e.target.checked)} /> Manual review</span>
+        <span className="hint">Choose Fix or Skip for each finding, then send the fixes to the builder.</span>
+      </label>
 
       <label className="field">
         <span className="field-label">

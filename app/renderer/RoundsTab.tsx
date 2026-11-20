@@ -1,8 +1,17 @@
-import type { RoundRecord, RunState } from "../shared/api.ts";
+import type { Decision, RoundRecord, RunState } from "../shared/api.ts";
 import { PHASE_AGENT, duration, phaseLabel, type TimedStep } from "./format.ts";
 import { decisionFor } from "./findings.ts";
 
-export function RoundsTab({ state, steps, live, now }: { state: RunState; steps: TimedStep[]; live: boolean; now: number }) {
+interface ReviewControls {
+  round: number;
+  busy: boolean;
+  choose: (id: string, verdict: Decision["verdict"]) => void;
+  submit: () => void;
+}
+
+export function RoundsTab({ state, steps, live, now, review }: {
+  state: RunState; steps: TimedStep[]; live: boolean; now: number; review: ReviewControls | null;
+}) {
   const roundNumbers = new Set<number>([0, ...steps.map((s) => s.round), ...state.rounds.map((r) => r.round)]);
   const rounds = [...roundNumbers].sort((a, b) => b - a);
 
@@ -11,7 +20,7 @@ export function RoundsTab({ state, steps, live, now }: { state: RunState; steps:
       {rounds.map((n) => {
         const record = state.rounds.find((r) => r.round === n) ?? null;
         const roundSteps = steps.filter((s) => s.round === n);
-        return <RoundCard key={n} round={n} record={record} steps={roundSteps} live={live} now={now} />;
+        return <RoundCard key={n} round={n} record={record} manual={Boolean(state.manualReview)} controls={review?.round === n ? review : null} steps={roundSteps} live={live} now={now} />;
       })}
     </div>
   );
@@ -20,18 +29,25 @@ export function RoundsTab({ state, steps, live, now }: { state: RunState; steps:
 function RoundCard({
   round,
   record,
+  manual,
+  controls,
   steps,
   live,
   now,
 }: {
   round: number;
   record: RoundRecord | null;
+  manual: boolean;
+  controls: ReviewControls | null;
   steps: TimedStep[];
   live: boolean;
   now: number;
 }) {
   const total = steps.reduce((sum, s) => sum + ((s.end ?? (live ? now : s.start)) - s.start), 0);
   const fixes = record?.decisions?.filter((d) => d.verdict === "fix").length ?? null;
+
+  const draft = new Map(record?.reviewDraft?.map((d) => [d.id, d.verdict]));
+  const selected = [...draft.values()].filter((v) => v === "fix").length;
 
   return (
     <article className="card round-card">
@@ -57,7 +73,7 @@ function RoundCard({
         <ol className="steps">
           {steps.map((s, i) => {
             const open = s.end === null && live;
-            const running = open && s.phase !== "paused";
+            const running = open && s.phase !== "paused" && s.phase !== "manual-review";
             const agent = PHASE_AGENT[s.phase];
             return (
               <li key={i} className={running ? "running" : ""}>
@@ -82,7 +98,7 @@ function RoundCard({
 
       {record?.builderSummary && (
         <details className="report">
-          <summary>What Claude reported</summary>
+          <summary>Builder report</summary>
           <pre className="prose-pre">{record.builderSummary}</pre>
         </details>
       )}
@@ -93,7 +109,7 @@ function RoundCard({
             <tr>
               <th>Finding</th>
               <th>Where</th>
-              <th>Judge</th>
+              <th>{manual ? "Your decision" : "Judge"}</th>
             </tr>
           </thead>
           <tbody>
@@ -115,13 +131,23 @@ function RoundCard({
                     </code>
                   </td>
                   <td className="verdict-cell">
-                    {decision ? (
+                    {controls ? (
+                      <div className="review-verdict" role="group" aria-label={`Decision for ${f.id}`}>
+                        {(["fix", "skip"] as const).map((verdict) => (
+                          <button key={verdict} className={`btn btn-small ${draft.get(f.id) === verdict ? "btn-primary" : ""}`}
+                            aria-pressed={draft.get(f.id) === verdict} disabled={controls.busy}
+                            onClick={() => controls.choose(f.id, verdict)}>
+                            {verdict === "fix" ? "Fix" : "Skip"}
+                          </button>
+                        ))}
+                      </div>
+                    ) : decision ? (
                       <>
                         <span className={`verdict verdict-${decision.verdict}`}>{decision.verdict === "fix" ? "Fix" : "Skip"}</span>
                         <div className="muted small">{decision.reason}</div>
                       </>
                     ) : (
-                      <span className="muted small">Waiting for the judge</span>
+                      <span className="muted small">{manual ? draft.get(f.id) ?? "Awaiting your review" : "Waiting for the judge"}</span>
                     )}
                   </td>
                 </tr>
@@ -131,7 +157,15 @@ function RoundCard({
         </table>
       )}
 
-      {record && record.findings.length === 0 && <p className="ok-text">Codex reported no findings.</p>}
+      {controls && record && (
+        <div className="review-submit">
+          <span className="muted small" aria-live="polite">{draft.size} of {record.findings.length} findings marked</span>
+          <button className="btn btn-primary" disabled={controls.busy || draft.size !== record.findings.length} onClick={controls.submit}>
+            {draft.size === record.findings.length && selected === 0 ? "Finish run" : "Send fixes to builder"}
+          </button>
+        </div>
+      )}
+      {record && record.findings.length === 0 && <p className="ok-text">The reviewer reported no findings.</p>}
     </article>
   );
 }

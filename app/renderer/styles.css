@@ -592,7 +592,7 @@ button:focus-visible {
 }
 .models-grid {
   display: grid;
-  grid-template-columns: 210px 1fr 160px;
+  grid-template-columns: auto minmax(95px, 1fr) minmax(125px, 1.6fr) minmax(105px, 1fr);
   gap: 8px 10px;
   align-items: center;
 }
@@ -605,32 +605,14 @@ button:focus-visible {
 .models-row {
   display: contents;
 }
-.models-agent {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
+.models-grid input,
 .models-grid select {
+  min-width: 0;
   width: 100%;
 }
 select:disabled {
   opacity: 0.55;
   cursor: default;
-}
-.agent-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 3px;
-  flex: none;
-}
-.agent-dot.agent-judge {
-  background: var(--judge);
-}
-.agent-dot.agent-claude {
-  background: var(--claude);
-}
-.agent-dot.agent-codex {
-  background: var(--codex);
 }
 .models-foot {
   display: flex;
@@ -867,10 +849,10 @@ select:disabled {
 .step-mark.agent-judge {
   background: var(--judge);
 }
-.step-mark.agent-claude {
+.step-mark.agent-builder {
   background: var(--claude);
 }
-.step-mark.agent-codex {
+.step-mark.agent-reviewer {
   background: var(--codex);
 }
 .step-mark.paused {
@@ -997,10 +979,10 @@ select:disabled {
 .agent-judge .log-agent {
   color: var(--judge);
 }
-.agent-claude .log-agent {
+.agent-builder .log-agent {
   color: var(--claude);
 }
-.agent-codex .log-agent {
+.agent-reviewer .log-agent {
   color: var(--codex);
 }
 .agent-loop .log-agent,
@@ -1461,4 +1443,28 @@ textarea.code {
   color: var(--text);
   font-size: 12px;
   cursor: help;
+}
+
+.review-option > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+.review-option input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.review-verdict, .review-submit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.review-submit {
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 14px;
 }

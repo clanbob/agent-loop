@@ -56,6 +56,7 @@ export interface StartRequest {
   test: string;
   guides: string[];
   agents: AgentChoices;
+  manualReview?: boolean;
 }
 
 export interface ParsedServers {
@@ -64,7 +65,7 @@ export interface ParsedServers {
   described: Array<{ name: string; summary: string }>;
 }
 
-export type PendingPause = { kind: "limit"; pause: LimitPause } | { kind: "confirm"; pause: PauseRequest };
+export type PendingPause = { kind: "limit"; pause: LimitPause } | { kind: "confirm"; pause: PauseRequest } | { kind: "review"; round: number };
 
 export type DisplayStatus = RunState["status"] | "interrupted";
 
@@ -124,6 +125,8 @@ export interface AgentLoopApi {
   startRun(request: StartRequest): Promise<{ id: string }>;
   resumeRun(id: string): Promise<void>;
   stopRun(id: string): Promise<void>;
+  setReviewVerdict(id: string, round: number, finding: string, verdict: Decision["verdict"]): Promise<void>;
+  submitReview(id: string, round: number): Promise<void>;
   answerPause(id: string, yes: boolean): Promise<void>;
   deleteRun(id: string): Promise<ActionResult>;
   readDiff(id: string, round: number, which: "round" | "total"): Promise<string>;

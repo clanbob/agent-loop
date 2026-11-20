@@ -8,6 +8,7 @@ export interface RunOptions {
   cwd: string;
   stdin?: string;
   logFile: string;
+  hideArgs?: boolean;
   timeoutMs: number;
   signal?: AbortSignal;
   onLine?: (line: string) => void;
@@ -107,7 +108,7 @@ export function runProcess(opts: RunOptions): Promise<RunResult> {
     : spawn(exe, opts.args, { cwd: opts.cwd, windowsHide: true, detached: !IS_WINDOWS });
 
   const log = createWriteStream(opts.logFile, { flags: "a" });
-  log.write(`$ ${exe} ${opts.args.join(" ")}\n(cwd ${opts.cwd})\n\n`);
+  log.write(`$ ${exe} ${opts.hideArgs ? "(MCP configuration omitted)" : opts.args.join(" ")}\n(cwd ${opts.cwd})\n\n`);
 
   let stdout = "";
   let stderr = "";

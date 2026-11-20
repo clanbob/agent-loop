@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
+import type { Decision } from "../../src/agents/judge.ts";
 import type { Config } from "../../src/config.ts";
 import { AgentLoop, listRuns, newRunId, type LimitPause, type PauseRequest, type RunState } from "../../src/loop.ts";
 import { folderSpec, robloxSpec, toolsSpec } from "../../src/workspace/index.ts";
@@ -97,7 +98,7 @@ export class RunManager {
         kind: t.state.workspace.kind,
         status: this.displayStatus(t.state, Boolean(t.loop)),
         live: Boolean(t.loop),
-        paused: Boolean(t.pending),
+        paused: Boolean(t.pending) || t.loop?.pendingReviewRound != null,
         title: titleOf(t.state.task),
         round: t.state.cursor.round,
         step: t.state.cursor.step,
@@ -114,7 +115,7 @@ export class RunManager {
         state: t.state,
         status: this.displayStatus(t.state, Boolean(t.loop)),
         live: Boolean(t.loop),
-        pending: t.pending?.pause ?? null,
+        pending: t.loop?.pendingReviewRound != null ? { kind: "review", round: t.loop.pendingReviewRound } : t.pending?.pause ?? null,
         folderDeleted: t.folderDeleted,
         logs: t.logs,
         finishDone: t.finishDone,
@@ -160,7 +161,7 @@ export class RunManager {
         : kind === "roblox"
           ? robloxSpec(this.config, scope, guides, studio, Object.keys(servers).length > 0 ? envSpec(servers) : null)
           : toolsSpec(this.config, id, scope, guides, envSpec(servers));
-    const loop = AgentLoop.start(this.config, id, task, spec, this.hooks(id), request.agents ?? null);
+    const loop = AgentLoop.start(this.config, id, task, spec, this.hooks(id), request.agents ?? null, request.manualReview === true);
     this.attach(loop);
     return { id };
   }
@@ -181,6 +182,20 @@ export class RunManager {
     if (!t?.loop) return;
     t.loop.stop();
     if (t.pending) this.answer(id, false);
+  }
+
+  private activeLoop(id: string): AgentLoop {
+    const loop = this.tracked.get(id)?.loop;
+    if (!loop) throw new Error("Resume the run to review its findings.");
+    return loop;
+  }
+
+  setReviewVerdict(id: string, round: number, finding: string, verdict: Decision["verdict"]): void {
+    this.activeLoop(id).setReviewVerdict(round, finding, verdict);
+  }
+
+  submitReview(id: string, round: number): void {
+    this.activeLoop(id).submitReview(round);
   }
 
   stopAll(): void {
@@ -243,6 +258,7 @@ export class RunManager {
       this.cacheDiffs(id, record.round);
       this.changed(id);
     });
+    loop.on("reviewChanged", () => this.changed(id));
     loop.on("triage", () => this.changed(id));
     loop.on("finished", (state) => {
       t.state = state;

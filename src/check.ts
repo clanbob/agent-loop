@@ -24,9 +24,9 @@ function version(command: string): Promise<string> {
 
 export async function checkTools(config: Config, includeStudio = true): Promise<ToolCheck[]> {
   const tools: Array<[string, string]> = [
-    ["Antigravity (judge)", config.agents.judge.command],
-    ["Claude (builder)", config.agents.builder.command],
-    ["Codex (reviewer)", config.agents.reviewer.command],
+    ["Antigravity", config.agents.judge.command],
+    ["Claude", config.agents.builder.command],
+    ["Codex", config.agents.reviewer.command],
   ];
   const results = await Promise.all(
     tools.map(async ([name, command]) => {

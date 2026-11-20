@@ -1,4 +1,4 @@
-Round {{round}}. The reviewer found problems with the code. The coordinator's fix list:
+Round {{round}}. The reviewer found problems with the code. Fix the findings selected for this round:
 <instructions>
 {{instructions}}
 </instructions>

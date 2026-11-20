@@ -1,69 +1,12 @@
 import { useEffect, useState } from "react";
-import type { AgentChoice, AgentChoices, AgentModels, ModelCatalog } from "../shared/api.ts";
+import { DEFAULT_CHOICES, PROVIDERS, PROVIDER_NAMES, ROLES, type AgentChoices, type Provider, type Role } from "../../src/roles.ts";
+import type { ModelCatalog } from "../shared/api.ts";
 import { api } from "./api.ts";
 
-const AGENTS = [
-  ["judge", "Antigravity", "plans and judges", "judge"],
-  ["builder", "Claude", "builds", "claude"],
-  ["reviewer", "Codex", "reviews", "codex"],
-] as const;
+const ROLE_LABEL = { judge: "Judge", builder: "Builder", reviewer: "Reviewer" };
+const EFFORT_LABEL: Record<string, string> = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max", ultra: "Ultra" };
 
-type AgentKey = (typeof AGENTS)[number][0];
-
-const EFFORT_LABEL: Record<string, string> = {
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  xhigh: "Extra high",
-  max: "Max",
-  ultra: "Ultra",
-};
-
-export const DEFAULT_CHOICES: AgentChoices = {
-  judge: { model: "gemini-4-neon", effort: "medium" },
-  builder: { model: "opus", effort: "medium" },
-  reviewer: { model: "gpt-6.2-astra", effort: "medium" },
-};
-
-function effortLabel(effort: string | null): string {
-  return effort ? (EFFORT_LABEL[effort] ?? effort) : "";
-}
-
-function pickEffort(efforts: string[], wanted: string | null, fallback: string): string | null {
-  if (efforts.length === 0) return null;
-  if (wanted && efforts.includes(wanted)) return wanted;
-  if (efforts.includes(fallback)) return fallback;
-  if (efforts.includes("medium")) return "medium";
-  return efforts[0];
-}
-
-function normalizeOne(info: AgentModels, choice: AgentChoice | undefined): AgentChoice {
-  const model = info.models.find((m) => m.id === choice?.model) ?? info.models.find((m) => m.id === info.defaultModel) ?? info.models[0];
-  if (!model) return { model: info.defaultModel, effort: info.defaultEffort };
-  return { model: model.id, effort: pickEffort(model.efforts, choice?.effort ?? null, info.defaultEffort) };
-}
-
-export function normalizeChoices(catalog: ModelCatalog, choices: AgentChoices | undefined): AgentChoices {
-  return {
-    judge: normalizeOne(catalog.judge, choices?.judge),
-    builder: normalizeOne(catalog.builder, choices?.builder),
-    reviewer: normalizeOne(catalog.reviewer, choices?.reviewer),
-  };
-}
-
-function sameChoices(a: AgentChoices, b: AgentChoices): boolean {
-  return AGENTS.every(([key]) => a[key].model === b[key].model && a[key].effort === b[key].effort);
-}
-
-function modelLabel(info: AgentModels | undefined, id: string | null): string {
-  return info?.models.find((m) => m.id === id)?.label ?? id ?? "";
-}
-
-export function ModelsMenu({
-  scopeLabel,
-  choices,
-  onChange,
-}: {
+export function ModelsMenu({ scopeLabel, choices, onChange }: {
   scopeLabel: string;
   choices: AgentChoices;
   onChange: (next: AgentChoices) => void;
@@ -71,102 +14,83 @@ export function ModelsMenu({
   const [catalog, setCatalog] = useState<ModelCatalog | null>(null);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const load = (refresh = false) => {
     setLoading(true);
-    api
-      .listModels(refresh)
-      .then(setCatalog)
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    setError("");
+    api.listModels(refresh).then(setCatalog).catch(() => setError("Could not load the model lists.")).finally(() => setLoading(false));
   };
-
   useEffect(() => load(), []);
 
-  useEffect(() => {
-    if (!catalog) return;
-    const normalized = normalizeChoices(catalog, choices);
-    if (!sameChoices(normalized, choices)) onChange(normalized);
-  }, [catalog, choices, onChange]);
+  function selectModel(role: Role, provider: Provider, model: string) {
+    const info = catalog?.[provider];
+    const known = info?.models.find((m) => m.id === model);
+    const preferred = choices[role].effort;
+    const fallback = info?.defaultEffort ?? "medium";
+    const effort = known?.efforts.includes(preferred ?? "") ? preferred
+      : known?.efforts.includes(fallback) ? fallback : known?.efforts[0] ?? null;
+    onChange({ ...choices, [role]: { provider, model, effort } });
+  }
 
-  const setModel = (key: AgentKey, modelId: string) => {
-    const info = catalog?.[key];
-    const model = info?.models.find((m) => m.id === modelId);
-    const effort = model && info ? pickEffort(model.efforts, choices[key].effort, info.defaultEffort) : choices[key].effort;
-    onChange({ ...choices, [key]: { model: modelId, effort } });
-  };
-
-  const setEffort = (key: AgentKey, effort: string) => onChange({ ...choices, [key]: { ...choices[key], effort } });
-
-  const summary = AGENTS.map(([key, name]) => {
-    const choice = choices[key];
-    const effort = effortLabel(choice.effort);
-    return `${name}: ${modelLabel(catalog?.[key], choice.model)}${effort ? ` · ${effort}` : ""}`;
+  const summary = ROLES.map((role) => {
+    const choice = choices[role];
+    const provider = choice.provider ?? DEFAULT_CHOICES[role].provider;
+    const label = catalog?.[provider].models.find((m) => m.id === choice.model)?.label ?? choice.model;
+    return `${ROLE_LABEL[role]}: ${label || "Provider default"}`;
   }).join("   |   ");
 
   return (
     <div className={`models ${open ? "open" : ""}`}>
       <button className="models-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
         <span className="models-title">Models</span>
-        <span className="models-summary">{catalog ? summary : "Loading models…"}</span>
-        <span className="chevron" aria-hidden>
-          ▾
-        </span>
+        <span className="models-summary">{summary}</span>
+        <span className="chevron" aria-hidden>▾</span>
       </button>
-      <div className="models-collapse">
+      <div className="models-collapse" inert={!open}>
         <div className="models-body">
           <div className="models-grid">
             <span />
+            <span className="models-head">Provider</span>
             <span className="models-head">Model</span>
             <span className="models-head">Effort</span>
-            {AGENTS.map(([key, name, role, color]) => {
-              const info = catalog?.[key];
-              const choice = choices[key];
+            {ROLES.map((role) => {
+              const name = ROLE_LABEL[role];
+              const choice = choices[role];
+              const provider = choice.provider ?? DEFAULT_CHOICES[role].provider;
+              const info = catalog?.[provider];
               const efforts = info?.models.find((m) => m.id === choice.model)?.efforts ?? [];
               return (
-                <div key={key} className="models-row">
-                  <div className="models-agent">
-                    <span className={`agent-dot agent-${color}`} />
-                    <strong>{name}</strong>
-                    <span className="muted small">{role}</span>
-                  </div>
-                  <select
-                    aria-label={`${name} model`}
-                    value={choice.model ?? ""}
-                    onChange={(e) => setModel(key, e.target.value)}
-                    disabled={!info}
-                  >
-                    {info?.models.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.label}
-                      </option>
-                    ))}
+                <div key={role} className="models-row">
+                  <strong>{name}</strong>
+                  <select aria-label={`${name} provider`} value={provider} onChange={(e) => {
+                    const next = e.target.value as Provider;
+                    selectModel(role, next, catalog?.[next].defaultModel ?? "");
+                  }}>
+                    {PROVIDERS.map((p) => <option key={p} value={p}>{PROVIDER_NAMES[p]}</option>)}
                   </select>
-                  <select
-                    aria-label={`${name} effort`}
-                    value={choice.effort ?? ""}
-                    onChange={(e) => setEffort(key, e.target.value)}
-                    disabled={efforts.length === 0}
-                  >
-                    {efforts.length === 0 && <option value="">Not adjustable</option>}
-                    {efforts.map((effort) => (
-                      <option key={effort} value={effort}>
-                        {effortLabel(effort)}
-                      </option>
-                    ))}
+                  <div>
+                    <input aria-label={`${name} model`} list={`${role}-models`} value={choice.model ?? ""}
+                      placeholder={info?.defaultModel ?? "Model ID"} spellCheck={false}
+                      onFocus={(e) => e.currentTarget.select()}
+                      onChange={(e) => selectModel(role, provider, e.target.value)} />
+                    <datalist id={`${role}-models`}>
+                      {info?.models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                    </datalist>
+                  </div>
+                  <select aria-label={`${name} effort`} value={choice.effort ?? ""} disabled={!efforts.length}
+                    onChange={(e) => onChange({ ...choices, [role]: { ...choice, provider, effort: e.target.value || null } })}>
+                    <option value="">Provider default</option>
+                    {efforts.map((effort) => <option key={effort} value={effort}>{EFFORT_LABEL[effort] ?? effort}</option>)}
                   </select>
                 </div>
               );
             })}
           </div>
           <div className="models-foot">
-            <span className="hint">
-              Saved for {scopeLabel}. A run keeps its models when resumed.
-            </span>
+            <span className="hint">{error || `Saved for ${scopeLabel}. You can also enter a model ID.`}</span>
             <span className="models-actions">
-              <button className="btn btn-small" onClick={() => catalog && onChange(normalizeChoices(catalog, DEFAULT_CHOICES))}>
-                Reset
-              </button>
+              <button className="btn btn-small" onClick={() => onChange(DEFAULT_CHOICES)}>Reset</button>
               <button className="btn btn-small btn-ghost" onClick={() => load(true)} disabled={loading}>
                 {loading ? "Refreshing…" : "Refresh lists"}
               </button>

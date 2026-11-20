@@ -173,11 +173,11 @@ const failed: RunState = {
 };
 
 const logs: LogLine[] = [
-  { at: Date.now() - 200_000, agent: "claude", text: "I'll start by reading the current cart routes." },
-  { at: Date.now() - 199_000, agent: "claude", text: "▸ Read  src/cart/routes.ts" },
-  { at: Date.now() - 198_000, agent: "claude", text: "▸ Edit  src/cart/routes.ts" },
-  { at: Date.now() - 196_000, agent: "claude", text: "▸ Bash  npm test -- discount" },
-  { at: Date.now() - 95_000, agent: "claude", text: "✖ You've hit your limit · resets 3pm" },
+  { at: Date.now() - 200_000, agent: "builder", text: "I'll start by reading the current cart routes." },
+  { at: Date.now() - 199_000, agent: "builder", text: "▸ Read  src/cart/routes.ts" },
+  { at: Date.now() - 198_000, agent: "builder", text: "▸ Edit  src/cart/routes.ts" },
+  { at: Date.now() - 196_000, agent: "builder", text: "▸ Bash  npm test -- discount" },
+  { at: Date.now() - 95_000, agent: "builder", text: "✖ You've hit your limit · resets 3pm" },
 ];
 
 const details: Record<string, RunDetail> = {
@@ -244,6 +244,8 @@ export function createMockApi(): AgentLoopApi {
     },
     resumeRun: async () => {},
     stopRun: async () => {},
+    setReviewVerdict: async () => { throw new Error("Review findings in the desktop app."); },
+    submitReview: async () => { throw new Error("Review findings in the desktop app."); },
     answerPause: async (id) => {
       details[id].pending = null;
       listeners.forEach((l) => l({ type: "run", id }));
@@ -254,12 +256,12 @@ export function createMockApi(): AgentLoopApi {
     pickFolder: async () => "C:\\Users\\andre\\projects\\shop-api",
     pickFiles: async () => [],
     checkTools: async () => [
-      { name: "Antigravity (judge)", ok: true, detail: "1.5.13" },
-      { name: "Claude (builder)", ok: true, detail: "2.1.329 (Claude Code)" },
-      { name: "Codex (reviewer)", ok: true, detail: "codex-cli 0.171.0" },
+      { name: "Antigravity", ok: true, detail: "1.5.13" },
+      { name: "Claude", ok: true, detail: "2.1.329 (Claude Code)" },
+      { name: "Codex", ok: true, detail: "codex-cli 0.171.0" },
     ],
     listModels: async () => ({
-      judge: {
+      antigravity: {
         models: [
           { id: "gemini-4-neon", label: "Gemini 4 Neon", efforts: ["low", "medium", "high", "xhigh"] },
           { id: "gemini-4-argon", label: "Gemini 4 Argon", efforts: ["low", "medium", "high"] },
@@ -269,7 +271,7 @@ export function createMockApi(): AgentLoopApi {
         defaultModel: "gemini-4-neon",
         defaultEffort: "medium",
       },
-      builder: {
+      claude: {
         models: [
           { id: "opus", label: "Opus", efforts: ["low", "medium", "high", "xhigh", "max"] },
           { id: "fable", label: "Fable", efforts: ["low", "medium", "high", "xhigh", "max"] },
@@ -278,7 +280,7 @@ export function createMockApi(): AgentLoopApi {
         defaultModel: "opus",
         defaultEffort: "medium",
       },
-      reviewer: {
+      codex: {
         models: [
           { id: "gpt-6.2-sol", label: "GPT-6.2 Sol", efforts: ["low", "medium", "high", "xhigh", "max", "ultra"] },
           { id: "gpt-6.2-astra", label: "GPT-6.2 Astra", efforts: ["low", "medium", "high", "xhigh", "max", "ultra"] },
