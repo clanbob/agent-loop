@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["mode", "reason", "instructions"],
+  "properties": {
+    "mode": { "type": "string", "enum": ["build", "review"] },
+    "reason": { "type": "string" },
+    "instructions": { "type": "string" }
+  }
+}

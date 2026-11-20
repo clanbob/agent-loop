@@ -113,6 +113,11 @@ export function RunView({ id, onDeleted }: { id: string; onDeleted: () => void }
               {pending ? "Paused" : STATUS_LABEL[status]}
             </span>
             <span>{target}</span>
+            {state.startMode && (
+              <span className="start-mode" title={state.startReason ?? undefined}>
+                Started with {state.startMode}
+              </span>
+            )}
             <span>Round {Math.max(state.cursor.round, 1)}</span>
             <span>{duration(ended - started)}</span>
             <span className="muted">{runDate(state.id)}</span>
@@ -208,9 +213,20 @@ export function RunView({ id, onDeleted }: { id: string; onDeleted: () => void }
           <div className="task-tab">
             <h3>Task</h3>
             <pre className="prose-pre">{state.task}</pre>
+            {state.startMode && (
+              <>
+                <h3>Starting point</h3>
+                <p className="prose-pre">
+                  {state.startMode === "review"
+                    ? "Review first: Codex reviewed the existing code before Claude changed anything."
+                    : "Build first: Claude built before Codex reviewed."}
+                  {state.startReason && <span className="muted"> {state.startReason}</span>}
+                </p>
+              </>
+            )}
             {state.instructions && (
               <>
-                <h3>Latest instructions from Antigravity</h3>
+                <h3>{state.startMode === "review" && (state.buildsDone ?? 0) === 0 ? "Review focus from Antigravity" : "Latest instructions from Antigravity"}</h3>
                 <pre className="prose-pre">{state.instructions}</pre>
               </>
             )}

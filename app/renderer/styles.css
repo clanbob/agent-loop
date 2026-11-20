@@ -1453,3 +1453,12 @@ textarea.code {
   background: var(--glass-active);
   color: var(--text);
 }
+
+.start-mode {
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  font-size: 12px;
+  cursor: help;
+}

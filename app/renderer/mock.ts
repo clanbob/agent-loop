@@ -103,6 +103,9 @@ const clean: RunState = {
   ...base("2026-11-19T22-36-27", "Create slugify.js exporting slugify(text) that turns any string into a URL slug."),
   status: "clean",
   endReason: "rest-skipped",
+  startMode: "review",
+  startReason: "The request asks to check the existing slugify module rather than add something new.",
+  buildsDone: 1,
   cursor: { round: 3, step: "judge-triage" },
   rounds: [
     {

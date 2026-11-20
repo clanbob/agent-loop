@@ -4,7 +4,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { Config } from "./config.ts";
 import { fillPrompt } from "./prompts.ts";
-import { runJudge, runTriage, type Decision } from "./agents/judge.ts";
+import { runJudgeStart, runTriage, type Decision } from "./agents/judge.ts";
 import { runBuilder, writeBuilderMcpConfig } from "./agents/builder.ts";
 import { runReviewer } from "./agents/reviewer.ts";
 import { AgentError, type Finding, type StepContext } from "./agents/types.ts";
@@ -84,6 +84,9 @@ export interface RunState {
   error: string | null;
   endReason: "no-findings" | "rest-skipped" | null;
   resultNote: string | null;
+  startMode?: "build" | "review" | null;
+  startReason?: string | null;
+  buildsDone?: number;
   pausedFor: LimitPause | null;
   timeline: TimelineEntry[];
   pid: number | null;
@@ -128,6 +131,7 @@ const RESUME_NOTE =
   "You were cut off before you finished. Some of the work below may already be done. Re-read the affected files first, then finish whatever is left.";
 
 const TEST_OUTPUT_LINES = 200;
+const FORCED_MODE = /^\s*(review|build)\s*:/i;
 const MAX_LISTED_FILES = 400;
 
 function formatFindings(findings: Finding[]): string {
@@ -294,6 +298,9 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
       endReason: null,
       resultNote: null,
       pausedFor: null,
+      startMode: null,
+      startReason: null,
+      buildsDone: 0,
       timeline: [],
       pid: process.pid,
       startedAt: new Date().toISOString(),
@@ -457,16 +464,27 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
         state.cursor = { round: 0, step: "judge-start" };
       } else if (step === "judge-start") {
         this.phase("judge", 0);
+        const forced = state.task.match(FORCED_MODE)?.[1]?.toLowerCase() as "build" | "review" | undefined;
         const prompt = fillPrompt(config.root, "judge-start", {
           task: state.task,
           workspace: workspace.notes.judge,
           files: fileListing(workspace.workDir),
           guides,
+          modeNote: forced ? `The user started the request with "${forced}:", so choose "${forced}".` : "",
         });
-        state.instructions = await this.withLimitPause(0, () =>
-          runJudge(this.context(setupDir, "judge"), prompt, "judge-start"),
+        const plan = await this.withLimitPause(0, () => runJudgeStart(this.context(setupDir, "judge"), prompt));
+        state.instructions = plan.instructions;
+        state.startMode = forced ?? plan.mode;
+        state.startReason = forced
+          ? `The task starts with "${forced[0].toUpperCase()}${forced.slice(1)}:".`
+          : plan.reason || null;
+        this.emit(
+          "log",
+          state.startMode === "review"
+            ? `Starting with a review of the existing code${state.startReason ? `: ${state.startReason}` : ""}`
+            : `Starting with a build${state.startReason ? `: ${state.startReason}` : ""}`,
         );
-        state.cursor = { round: 1, step: "build" };
+        state.cursor = state.startMode === "review" ? { round: 1, step: "snapshot" } : { round: 1, step: "build" };
       } else if (step === "build") {
         if (round > state.roundsAllowed) {
           const go = await this.hooks.confirmContinue({
@@ -480,14 +498,14 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
 
         this.phase("build", round);
         const instructions = state.instructions ?? "";
+        const buildsDone = state.buildsDone ?? round - 1;
+        const fixFindings = formatFindings(toFix(recordFor(round - 1)));
         const buildPrompt =
-          round === 1
+          buildsDone === 0 && round === 1
             ? fillPrompt(config.root, "build-first", { task: state.task, instructions })
-            : fillPrompt(config.root, "build-fix", {
-                round: String(round),
-                instructions,
-                findings: formatFindings(toFix(recordFor(round - 1))),
-              });
+            : buildsDone === 0
+              ? fillPrompt(config.root, "build-fix-first", { task: state.task, instructions, findings: fixFindings })
+              : fillPrompt(config.root, "build-fix", { round: String(round), instructions, findings: fixFindings });
         const buildContext = this.context(this.roundDir(round), "claude");
         const interrupted = this.resumeInterruptedBuild;
 
@@ -496,7 +514,7 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
         const build = await this.withLimitPause(round, async (retry) => {
           const retrying = retry > 0 || interrupted;
           const prompt = retrying ? `${RESUME_NOTE}\n\n${buildPrompt}` : buildPrompt;
-          const resume = round > 1 || retrying;
+          const resume = buildsDone > 0 || retrying;
           try {
             return await runBuilder(buildContext, workspace.builder, prompt, systemPromptFile, {
               id: state.builderSessionId,
@@ -515,6 +533,7 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
         this.resumeInterruptedBuild = false;
         state.builderSessionId = build.sessionId;
         state.buildStarted = false;
+        state.buildsDone = buildsDone + 1;
         state.currentBuild = { summary: build.summary, costUsd: build.costUsd };
         state.cursor = { round, step: "snapshot" };
       } else if (step === "snapshot") {
@@ -532,7 +551,8 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
           `Round ${round}: ${roundFiles.length} file(s) changed this round, ${cumulativeFiles.length} in total`,
         );
 
-        if (workspace.tracksChanges && cumulativeFiles.length === 0) {
+        const reviewingExisting = (state.buildsDone ?? round - 1) === 0;
+        if (workspace.tracksChanges && cumulativeFiles.length === 0 && !reviewingExisting) {
           const go = await this.hooks.confirmContinue({
             reason: "Claude finished but nothing has changed.",
             details: [(state.currentBuild?.summary ?? "").slice(0, 1500)],
@@ -593,7 +613,9 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
           task: state.task,
           workspace: workspace.notes.reviewer,
           guides,
-          changes: workspace.tracksChanges
+          changes: (state.buildsDone ?? round - 1) === 0
+            ? `This run started with a review of the existing code: nothing has been changed yet, so there is no diff. For this first review, review the existing code the request is about (this overrides the line below about only reviewing changed code). The coordinator's focus for this review:\n<review_focus>\n${state.instructions ?? ""}\n</review_focus>${workspace.tracksChanges ? "" : "\nInspect it through the MCP tools, read only."}`
+            : workspace.tracksChanges
             ? `All changes made so far in this task (a git diff against the code before the task started):\n\`\`\`diff\n${readFileSync(snap.diffFile, "utf8")}\n\`\`\``
             : `There is no diff for this run: the work was done live through MCP tools. What the builder reported doing this round:\n<builder_report>\n${state.currentBuild?.summary ?? ""}\n</builder_report>\nCheck the real current state through the tools.`,
           tests: testsBlock,

@@ -30,6 +30,26 @@ export async function runJudge(ctx: StepContext, prompt: string, label: string):
   return answer.instructions;
 }
 
+export interface StartPlan {
+  mode: "build" | "review";
+  reason: string;
+  instructions: string;
+}
+
+export async function runJudgeStart(ctx: StepContext, prompt: string): Promise<StartPlan> {
+  const answer = await ask<StartPlan>(ctx, prompt, "judge-start", "start.schema.json", (a) => {
+    if (typeof a.instructions !== "string" || !a.instructions.trim()) throw new Error("empty instructions");
+  });
+  const plan: StartPlan = {
+    mode: answer.mode === "review" ? "review" : "build",
+    reason: typeof answer.reason === "string" ? answer.reason.trim() : "",
+    instructions: answer.instructions,
+  };
+  writeFileSync(path.join(ctx.roundDir, "judge-start.md"), plan.instructions, "utf8");
+  writeFileSync(path.join(ctx.roundDir, "judge-start.json"), JSON.stringify(plan, null, 2), "utf8");
+  return plan;
+}
+
 export async function runTriage(ctx: StepContext, prompt: string, findings: Finding[]): Promise<Triage> {
   const answer = await ask<Triage>(ctx, prompt, "judge-triage", "triage.schema.json", (a) => {
     if (!Array.isArray(a.decisions)) throw new Error("no decisions list");
