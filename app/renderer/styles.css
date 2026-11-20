@@ -666,6 +666,30 @@ select:disabled {
 .tool-list strong {
   min-width: 170px;
   font-weight: 500;
+  flex: none;
+}
+.tool-detail {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.tool-install {
+  margin-left: auto;
+  flex: none;
+  color: var(--text);
+  font-size: 12.5px;
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+  white-space: nowrap;
+  transition: color 0.15s ease, text-decoration-color 0.15s ease;
+}
+.tool-install:hover {
+  text-decoration-color: var(--text);
+}
+.tool-install:focus-visible {
+  outline: 1px solid rgba(255, 255, 255, 0.45);
+  outline-offset: 2px;
+  border-radius: 3px;
 }
 
 /* run view */

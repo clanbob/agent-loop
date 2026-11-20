@@ -2,6 +2,12 @@ import { useEffect, useState } from "react";
 import type { ToolStatus } from "../shared/api.ts";
 import { api } from "./api.ts";
 
+const INSTALL_URLS: Record<string, string> = {
+  Antigravity: "https://antigravity.google/download",
+  Claude: "https://code.claude.com/docs/en/quickstart",
+  Codex: "https://developers.openai.com/codex/cli",
+};
+
 export function Home({ onNew }: { onNew: () => void }) {
   const [tools, setTools] = useState<ToolStatus[] | null>(null);
   const [checking, setChecking] = useState(false);
@@ -37,11 +43,23 @@ export function Home({ onNew }: { onNew: () => void }) {
         {tools && (
           <ul className="tool-list">
             {tools.map((t) => {
+              const installUrl = !t.ok ? INSTALL_URLS[t.name] : undefined;
               return (
                 <li key={t.name}>
                   <span className={`dot ${t.ok ? "dot-clean" : "dot-failed"}`} />
                   <strong>{t.name}</strong>
-                  <span className="muted">{t.detail}</span>
+                  <span className="muted tool-detail">{t.detail}</span>
+                  {installUrl && (
+                    <a
+                      className="tool-install"
+                      href={installUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`Install ${t.name}`}
+                    >
+                      Install
+                    </a>
+                  )}
                 </li>
               );
             })}
