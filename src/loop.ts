@@ -508,7 +508,7 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
     return this.withLimitPause(0, () => chooseStart(ctx, prompt));
   }
 
-  private judgeTriage(record: RoundRecord, guides: string): Promise<Triage> {
+  private judgeTriage(record: RoundRecord): Promise<Triage> {
     const { round } = record;
     this.phase("judge", round);
     const earlierSkips = skippedSoFar(this.state.rounds.filter((r) => r.round < round));
@@ -522,11 +522,11 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
           ? `Findings you ruled "skip" in earlier rounds (rule the same way on a finding that is just one of these again):\n${earlierSkips.map((s) => `- ${s.finding.file}: ${s.finding.issue} (your reason: ${s.reason})`).join("\n")}`
           : "",
       workspace: this.workspace.notes.judge,
-      guides,
     });
-    return this.withLimitPause(round, () =>
-      runTriage(this.context(this.roundDir(round), "judge"), prompt, record.findings),
-    );
+    const dir = path.join(this.roundDir(round), "triage");
+    mkdirSync(dir, { recursive: true });
+    const ctx = { ...this.context(this.roundDir(round), "judge"), workDir: dir, guides: [] };
+    return this.withLimitPause(round, () => runTriage(ctx, prompt, record.findings));
   }
 
   private async loop(): Promise<void> {
@@ -741,7 +741,7 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
         state.cursor = { round, step: state.manualReview ? "manual-review" : "judge-triage" };
       } else if (step === "judge-triage" || step === "manual-review") {
         const record = recordFor(round)!;
-        const triage = step === "manual-review" ? await this.manualTriage(record) : await this.judgeTriage(record, guides);
+        const triage = step === "manual-review" ? await this.manualTriage(record) : await this.judgeTriage(record);
         record.decisions = triage.decisions;
         this.emit("triage", round, triage.decisions);
 

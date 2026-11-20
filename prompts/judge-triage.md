@@ -22,9 +22,7 @@ The reviewer's findings this round:
 Where the code is:
 {{workspace}}
 
-{{guides}}
-
-Use read-only file inspection and search, and only when a finding cannot be judged without looking at the code.
+The reviewer has already read the code and the project's guides. Rule from the request, the builder's report and the findings above alone: do not open files, search the project or use any tools. Each finding names its file and line, which is enough to write the fix list.
 
 Step 1: give every finding a verdict.
 - "fix": a real problem. Always "fix" for: wrong behaviour or a crash in realistic use, security problems, data loss, leaks, any part of the request that is missing or wrong, failing tests, and any break of the project's guides or its CLAUDE.md / AGENTS.md rules.

@@ -13,13 +13,13 @@ interface Request<T> {
   schema: string;
   key: string;
   validate: (value: T) => void;
-  taskOnly?: boolean;
+  promptOnly?: boolean;
   servers?: McpServers;
   builder?: BuilderSetup;
 }
 
 function antigravityArgs<T>(
-  ctx: StepContext, schema: string, { role, servers = {}, builder, taskOnly }: Request<T>,
+  ctx: StepContext, schema: string, { role, servers = {}, builder, promptOnly }: Request<T>,
 ): string[] {
   const agent = ctx.config.agents[role];
   const configDir = path.join(ctx.roundDir, role);
@@ -32,7 +32,7 @@ function antigravityArgs<T>(
   const edits = builder?.allowedTools.some((tool) => tool === "Edit" || tool === "Write");
   const shell = builder?.allowedTools.some((tool) => tool === "Bash" || tool === "PowerShell");
   const deny = [...(edits ? [] : ["write_file(*)"]), ...(shell ? [] : ["command(*)"])];
-  if (taskOnly) deny.push("read_file(*)");
+  if (promptOnly) deny.push("read_file(*)");
   const allow = builder ? Object.keys(servers).map((name) => `mcp(${name}/*)`) : [];
   if (!Object.keys(servers).length) deny.push("mcp(*)");
   const settings = path.join(configDir, "settings.json");
@@ -48,7 +48,7 @@ function antigravityArgs<T>(
 }
 
 export async function askStructured<T>(ctx: StepContext, prompt: string, request: Request<T>): Promise<T> {
-  const { role, label, servers = {}, builder, taskOnly } = request;
+  const { role, label, servers = {}, builder, promptOnly } = request;
   const agent = ctx.config.agents[role];
   const name = `${PROVIDER_NAMES[agent.provider]} (${role})`;
   const schema = path.join(ctx.config.root, "schemas", request.schema);
@@ -64,7 +64,7 @@ export async function askStructured<T>(ctx: StepContext, prompt: string, request
         "exec", "--sandbox", writable ? "workspace-write" : "read-only", "--skip-git-repo-check",
         "--ephemeral", "--color", "never", "--output-schema", schema, "-o", rawFile,
         "-C", ctx.workDir, ...codexMcpArgs(servers),
-        ...(taskOnly ? ["-c", "features.shell_tool=false", "-c", "features.multi_agent=false", "-c", "mcp_servers={}", "-c", 'web_search="disabled"'] : []),
+        ...(promptOnly ? ["-c", "features.shell_tool=false", "-c", "features.multi_agent=false", "-c", "mcp_servers={}", "-c", 'web_search="disabled"'] : []),
         ...(agent.model ? ["-m", agent.model] : []),
         ...(agent.effort ? ["-c", `model_reasoning_effort=${JSON.stringify(agent.effort)}`] : []),
         "-",
@@ -77,8 +77,8 @@ export async function askStructured<T>(ctx: StepContext, prompt: string, request
       args = [
         "-p", "--no-session-persistence", "--output-format", "json",
         "--json-schema", JSON.stringify(JSON.parse(readFileSync(schema, "utf8"))), "--permission-mode", "dontAsk",
-        "--tools", taskOnly ? "" : "Read,Grep,Glob", "--allowedTools", "StructuredOutput",
-        ...(taskOnly ? [] : ["Read", "Grep", "Glob"]),
+        "--tools", promptOnly ? "" : "Read,Grep,Glob", "--allowedTools", "StructuredOutput",
+        ...(promptOnly ? [] : ["Read", "Grep", "Glob"]),
         ...Object.keys(servers).map((server) => `mcp__${server}`),
         "--strict-mcp-config", "--mcp-config", configFile,
         ...[...new Set(ctx.guides.map((g) => path.dirname(g)))].flatMap((dir) => ["--add-dir", dir]),
@@ -112,7 +112,7 @@ export async function askStructured<T>(ctx: StepContext, prompt: string, request
       const error = failure(name, `could not read its answer: ${(err as Error).message}`, logFile, output);
       const denied = /"denied_actions"\s*:\s*\[\s*\{/.test(output);
       if (error.limit || role === "builder" || agent.provider !== "antigravity" || !denied || attempt > 0) throw error;
-      prompt += taskOnly
+      prompt += promptOnly
         ? "\nChoose the starting step using only the request text and return the requested JSON."
         : "\nYour previous attempt used a blocked tool. Inspect files with read-only tools and return the requested JSON.";
     }

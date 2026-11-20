@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -93,11 +93,18 @@ for (const provider of PROVIDERS) {
     assert.match(review.input, /<request>\s*Is the inventory total correct\?\s*<\/request>/);
     assert.doesNotMatch(review.input, /review_focus|request asks for an inspection/i);
     assert.match(triage.input, /Incorrect inventory total/);
-    if (provider === "claude") assert.equal(route.args[route.args.indexOf("--tools") + 1], "");
-    if (provider === "codex") assert(route.args.includes("features.shell_tool=false"));
-    if (provider === "antigravity") {
-      const settings = JSON.parse(readFileSync(route.args[route.args.indexOf("--settings") + 1], "utf8"));
-      assert(settings.permissions.deny.includes("read_file(*)"));
+    assert.match(triage.input, /do not open files/i);
+    assert.doesNotMatch(triage.input, /read-only file inspection/i);
+    assert.notEqual(triage.cwd, review.cwd);
+    assert.deepEqual(readdirSync(triage.cwd), []);
+    for (const call of [route, triage]) {
+      if (provider === "claude") assert.equal(call.args[call.args.indexOf("--tools") + 1], "");
+      if (provider === "codex") assert(call.args.includes("features.shell_tool=false"));
+      if (provider === "antigravity") {
+        const settings = JSON.parse(readFileSync(call.args[call.args.indexOf("--settings") + 1], "utf8"));
+        assert(settings.permissions.deny.includes("read_file(*)"));
+        assert(!call.args.includes(review.cwd));
+      }
     }
     const build = calls.find((c) => c.step === "build");
     assert.match(build.input, /Incorrect inventory total/);

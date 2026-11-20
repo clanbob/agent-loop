@@ -29,7 +29,7 @@ export interface StartChoice {
 
 export function chooseStart(ctx: StepContext, prompt: string): Promise<StartChoice> {
   return askStructured<StartChoice>(ctx, prompt, {
-    role: "judge", label: "judge-start", schema: "start.schema.json", key: "mode", taskOnly: true,
+    role: "judge", label: "judge-start", schema: "start.schema.json", key: "mode", promptOnly: true,
     validate(answer) {
       if (answer.mode !== "build" && answer.mode !== "review") throw new Error("expected a build or review starting step");
       if (typeof answer.reason !== "string") throw new Error("expected a reason for the starting step");
@@ -38,8 +38,11 @@ export function chooseStart(ctx: StepContext, prompt: string): Promise<StartChoi
 }
 
 export async function runTriage(ctx: StepContext, prompt: string, findings: Finding[]): Promise<Triage> {
-  const answer = await ask<Triage>(ctx, prompt, "judge-triage", "triage.schema.json", (a) => {
-    if (!Array.isArray(a.decisions)) throw new Error("no decisions list");
+  const answer = await askStructured<Triage>(ctx, prompt, {
+    role: "judge", label: "judge-triage", schema: "triage.schema.json", key: "instructions", promptOnly: true,
+    validate(a) {
+      if (!Array.isArray(a.decisions)) throw new Error("no decisions list");
+    },
   });
 
   const byId = new Map(answer.decisions.map((d) => [d.id, d]));
