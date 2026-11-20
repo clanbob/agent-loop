@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -20,7 +20,7 @@ const fixture = fileURLToPath(new URL("./fixtures/provider.cjs", import.meta.url
 const hooks = { confirmContinue: async () => false, waitForResume: async () => false };
 
 function setup(t) {
-  const dir = mkdtempSync(path.join(os.tmpdir(), "agent-loop-test-"));
+  const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), "agent-loop-test-")));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const trace = path.join(dir, "calls.jsonl");
   const config = loadConfig(root, undefined, dir);
