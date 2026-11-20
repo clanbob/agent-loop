@@ -9,6 +9,13 @@ export interface StudioInfo {
   placeId?: number;
 }
 
+const STUDIO_WAIT_MS = Number(process.env.AGENT_LOOP_STUDIO_WAIT_MS) || 45_000;
+const STUDIO_POLL_MS = 1_000;
+
+function pick(studios: StudioInfo[], placeId: number | null): StudioInfo | undefined {
+  return placeId == null ? studios[0] : studios.find((s) => s.placeId === placeId);
+}
+
 export class StudioClient {
   private client: Client;
   private transport: StdioClientTransport;
@@ -56,13 +63,25 @@ export class StudioClient {
     return (JSON.parse(text).studios ?? []) as StudioInfo[];
   }
 
+  // The first StudioMCP process to start hosts the connection Studio joins. When the host exits
+  // (for example the builder's, at the end of a build), this process takes over and Studio
+  // needs a few seconds to reconnect, so an empty list right after starting is not final.
   private async selectStudio(placeId: number | null): Promise<void> {
-    const studios = await this.listStudios();
-    if (studios.length === 0) throw new Error("No Roblox Studio is connected. Open the place in Studio first.");
-    const match = placeId == null ? studios[0] : studios.find((s) => s.placeId === placeId);
+    const deadline = Date.now() + STUDIO_WAIT_MS;
+    let studios = await this.listStudios();
+    let match = pick(studios, placeId);
+    while (!match && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, STUDIO_POLL_MS));
+      studios = await this.listStudios();
+      match = pick(studios, placeId);
+    }
+    const waited = `after waiting ${Math.round(STUDIO_WAIT_MS / 1000)} seconds`;
+    if (studios.length === 0) {
+      throw new Error(`No Roblox Studio connected ${waited}. Open the place in Studio, check that its MCP server is turned on, then resume.`);
+    }
     if (!match) {
       throw new Error(
-        `Studio with placeId ${placeId} is not open. Open studios: ${studios.map((s) => s.name).join(", ")}`,
+        `Studio with placeId ${placeId} is not open (${waited}). Open studios: ${studios.map((s) => s.name).join(", ")}`,
       );
     }
     if (match.mode !== "Edit") throw new Error(`Studio "${match.name}" is in ${match.mode} mode. Stop play mode first.`);
