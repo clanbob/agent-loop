@@ -16,6 +16,7 @@ const methods: ApiMethod[] = [
   "answerPause",
   "setReviewVerdict",
   "submitReview",
+  "setManualReview",
   "deleteRun",
   "readDiff",
   "finishAction",

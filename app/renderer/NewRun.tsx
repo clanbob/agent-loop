@@ -4,6 +4,7 @@ import { api, errorText } from "./api.ts";
 import { basename } from "./format.ts";
 import { DEFAULT_CHOICES } from "../../src/roles.ts";
 import { ModelsMenu } from "./ModelsMenu.tsx";
+import { Switch } from "./Switch.tsx";
 import { EnvironmentDialog } from "./EnvironmentDialog.tsx";
 
 const PREFS_KEY = "agentloop.newrun.v2";
@@ -188,10 +189,10 @@ export function NewRun({ onStarted, onCancel }: { onStarted: (id: string) => voi
 
       <ModelsMenu scopeLabel={env ? `the ${env.name} environment` : "this environment"} choices={agents} onChange={changeAgents} />
 
-      <label className="field review-option">
-        <span><input type="checkbox" checked={manualReview} onChange={(e) => setManualReview(e.target.checked)} /> Manual review</span>
-        <span className="hint">Choose Fix or Skip for each finding, then send the fixes to the builder.</span>
-      </label>
+      <div className="field review-option">
+        <Switch checked={manualReview} onChange={setManualReview} label="Manual review" />
+        <span className="hint">Choose Fix or Skip for each finding yourself instead of the judge. You can also switch this during a run.</span>
+      </div>
 
       <label className="field">
         <span className="field-label">

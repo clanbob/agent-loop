@@ -246,6 +246,10 @@ export function createMockApi(): AgentLoopApi {
     stopRun: async () => {},
     setReviewVerdict: async () => { throw new Error("Review findings in the desktop app."); },
     submitReview: async () => { throw new Error("Review findings in the desktop app."); },
+    setManualReview: async (id, on) => {
+      details[id] = { ...details[id], state: { ...details[id].state, manualReview: on } };
+      listeners.forEach((l) => l({ type: "run", id }));
+    },
     answerPause: async (id) => {
       details[id].pending = null;
       listeners.forEach((l) => l({ type: "run", id }));

@@ -127,6 +127,7 @@ export interface AgentLoopApi {
   stopRun(id: string): Promise<void>;
   setReviewVerdict(id: string, round: number, finding: string, verdict: Decision["verdict"]): Promise<void>;
   submitReview(id: string, round: number): Promise<void>;
+  setManualReview(id: string, on: boolean): Promise<void>;
   answerPause(id: string, yes: boolean): Promise<void>;
   deleteRun(id: string): Promise<ActionResult>;
   readDiff(id: string, round: number, which: "round" | "total"): Promise<string>;

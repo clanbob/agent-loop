@@ -71,6 +71,9 @@ exports.run = function run(provider, trace, args) {
     answer = { summary: "Updated the inventory total" };
   }
   fs.appendFileSync(trace, JSON.stringify({ provider, step, cwd: process.cwd(), model: value("-m") ?? value("--model"), args, input }) + "\n");
+  if (step === "triage" && process.env.AGENT_LOOP_FIXTURE_SLOW_TRIAGE) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 60_000);
+  }
 
   if (provider === "codex") fs.writeFileSync(value("-o"), JSON.stringify(answer));
   else if (!schema) console.log(JSON.stringify({ type: "result", result: answer.summary, session_id: value("--session-id") }));

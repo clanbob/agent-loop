@@ -689,6 +689,7 @@ select:disabled {
 }
 .run-head-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
 }
 .run-meta {
@@ -1078,6 +1079,8 @@ textarea:hover {
 }
 @media (prefers-reduced-motion: reduce) {
   .seg.ready .seg-thumb,
+  .switch-track,
+  .switch-knob,
   .models-collapse,
   .models-body,
   .chevron {
@@ -1450,17 +1453,72 @@ textarea.code {
   cursor: help;
 }
 
-.review-option > span:first-child {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.review-option {
+  align-items: flex-start;
+}
+.review-option .switch-label {
   font-weight: 600;
 }
-.review-option input[type="checkbox"] {
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.switch:hover:not(:disabled) .switch-track {
+  border-color: var(--border-strong);
+}
+.switch:active:not(:disabled) .switch-knob {
   width: 16px;
-  height: 16px;
-  margin: 0;
-  accent-color: var(--accent);
+}
+.switch:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.switch:focus-visible {
+  outline: 2px solid var(--border-strong);
+  outline-offset: 2px;
+}
+.switch-label {
+  white-space: nowrap;
+}
+.switch-track {
+  position: relative;
+  flex: none;
+  width: 32px;
+  height: 18px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--glass-strong);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+.switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--muted);
+  transition: transform 0.2s cubic-bezier(0.3, 0.7, 0.4, 1), background 0.2s ease, width 0.12s ease;
+}
+.switch.on .switch-track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.switch.on .switch-knob {
+  background: var(--accent-text);
+  transform: translateX(14px);
+}
+.switch.on:active:not(:disabled) .switch-knob {
+  transform: translateX(10px);
 }
 
 .review-verdict, .review-submit {

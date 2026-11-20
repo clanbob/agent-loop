@@ -20,7 +20,10 @@ export function RoundsTab({ state, steps, live, now, review }: {
       {rounds.map((n) => {
         const record = state.rounds.find((r) => r.round === n) ?? null;
         const roundSteps = steps.filter((s) => s.round === n);
-        return <RoundCard key={n} round={n} record={record} manual={Boolean(state.manualReview)} controls={review?.round === n ? review : null} steps={roundSteps} live={live} now={now} />;
+        const manual = record?.decisions
+          ? record.reviewedBy === "you" || (!record.reviewedBy && Boolean(state.manualReview))
+          : state.cursor.round === n && state.cursor.step === "manual-review";
+        return <RoundCard key={n} round={n} record={record} manual={manual} controls={review?.round === n ? review : null} steps={roundSteps} live={live} now={now} />;
       })}
     </div>
   );

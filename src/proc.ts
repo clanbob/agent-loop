@@ -161,6 +161,7 @@ export function runProcess(opts: RunOptions): Promise<RunResult> {
     killTree(child.pid);
   };
   opts.signal?.addEventListener("abort", onAbort, { once: true });
+  if (opts.signal?.aborted) onAbort();
 
   return new Promise((resolve, reject) => {
     child.on("error", (err) => {

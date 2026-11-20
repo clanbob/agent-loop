@@ -198,6 +198,12 @@ export class RunManager {
     this.activeLoop(id).submitReview(round);
   }
 
+  setManualReview(id: string, on: boolean): void {
+    const loop = this.tracked.get(id)?.loop;
+    if (!loop) throw new Error("Resume the run to change how findings are reviewed.");
+    loop.setManualReview(on);
+  }
+
   stopAll(): void {
     for (const id of this.tracked.keys()) this.stop(id);
   }

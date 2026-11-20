@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -274,4 +274,60 @@ test("submitting all Skip finishes without a triage or build call", async (t) =>
   assert.equal(result.status, "clean", result.error);
   assert.equal(result.endReason, "rest-skipped");
   assert.deepEqual(env.calls().map((c) => c.step), ["review"]);
+});
+
+async function within(ms, promise, what) {
+  let timer;
+  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(Error(`Timed out waiting for ${what}`)), ms); });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+test("turning manual review on while the judge is ruling hands that round to you", async (t) => {
+  const env = setup(t);
+  process.env.AGENT_LOOP_FIXTURE_SLOW_TRIAGE = "1";
+  t.after(() => { delete process.env.AGENT_LOOP_FIXTURE_SLOW_TRIAGE; });
+  const loop = env.start(DEFAULT_CHOICES, false, "Review: Build a list of inventory problems.");
+  const done = loop.run();
+  await within(10_000, (async () => {
+    for (;;) {
+      if (existsSync(path.join(env.config.dataDir, "calls.jsonl")) && env.calls().some((c) => c.step === "triage")) return;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+  })(), "the judge to start ruling");
+
+  const handed = once(loop, "manualReview");
+  const switched = Date.now();
+  loop.setManualReview(true);
+  loop.setManualReview(true);
+  await within(10_000, handed, "the round to be handed over");
+  assert(Date.now() - switched < 10_000);
+  assert.equal(loop.pendingReviewRound, 1);
+  for (const f of loop.state.rounds[0].findings) loop.setReviewVerdict(1, f.id, "skip");
+  loop.submitReview(1);
+
+  const state = await done;
+  assert.equal(state.status, "clean", state.error);
+  assert.equal(state.endReason, "rest-skipped");
+  assert.equal(state.manualReview, true);
+  assert.equal(state.rounds[0].reviewedBy, "you");
+  assert.deepEqual(env.calls().map((c) => c.step), ["review", "triage"]);
+  assert.throws(() => loop.setManualReview(false), /not going/);
+});
+
+test("turning manual review off while a round waits hands it to the judge", async (t) => {
+  const env = setup(t);
+  const loop = env.start(DEFAULT_CHOICES, true, "Review: Build a list of inventory problems.");
+  const { done } = await pauseAtReview(loop);
+  loop.setReviewVerdict(1, "F2", "fix");
+  loop.setManualReview(false);
+  const state = await done;
+  assert.equal(state.status, "clean", state.error);
+  assert.equal(state.manualReview, false);
+  assert.equal(state.rounds[0].reviewedBy, "judge");
+  assert.deepEqual(state.rounds[0].decisions.map((d) => d.verdict), ["fix", "skip"]);
+  assert.deepEqual(env.calls().map((c) => c.step), ["review", "triage", "build", "review"]);
 });

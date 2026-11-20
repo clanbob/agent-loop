@@ -8,6 +8,7 @@ import { OutputTab } from "./OutputTab.tsx";
 import { ChangesTab } from "./ChangesTab.tsx";
 import { skippedFindings } from "./findings.ts";
 import { Segmented } from "./Segmented.tsx";
+import { Switch } from "./Switch.tsx";
 
 const TABS = [
   ["rounds", "Rounds"],
@@ -125,6 +126,13 @@ export function RunView({ id, onDeleted }: { id: string; onDeleted: () => void }
           </div>
         </div>
         <div className="run-head-actions">
+          {live && (
+            <Switch checked={Boolean(state.manualReview)} disabled={busy} label="Manual review"
+              title={state.manualReview
+                ? "You rule Fix or Skip on each finding. Turn off to hand the rulings back to the judge."
+                : "The judge rules on each finding. Turn on to rule on them yourself; a ruling already in progress is handed to you."}
+              onChange={(on) => act(() => api.setManualReview(id, on))} />
+          )}
           {live && (
             <button className="btn btn-danger" disabled={busy} onClick={() => act(() => api.stopRun(id))}>
               Stop

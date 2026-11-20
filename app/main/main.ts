@@ -76,6 +76,7 @@ const handlers: Handlers = {
   stopRun: (id) => runs.stop(id),
   setReviewVerdict: (id, round, finding, verdict) => runs.setReviewVerdict(id, round, finding, verdict),
   submitReview: (id, round) => runs.submitReview(id, round),
+  setManualReview: (id, on) => runs.setManualReview(id, on),
   answerPause: (id, yes) => runs.answer(id, yes),
   deleteRun: (id) => runs.delete(id),
   readDiff: (id, round, which) => runs.readDiff(id, round, which),

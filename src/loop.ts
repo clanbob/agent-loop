@@ -28,6 +28,7 @@ export interface RoundRecord {
   testExitCode: number | null;
   findings: Finding[];
   decisions: Decision[] | null;
+  reviewedBy?: "judge" | "you";
   reviewDraft?: Pick<Decision, "id" | "verdict">[];
   costUsd: number | null;
 }
@@ -105,6 +106,7 @@ export interface LoopEvents {
   manualReview: [record: RoundRecord, signal: AbortSignal];
   reviewChanged: [];
   reviewSubmitted: [];
+  reviewHandedBack: [];
   finished: [state: RunState];
 }
 
@@ -243,6 +245,7 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
   private config: Config;
   private hooks: LoopHooks;
   private abort = new AbortController();
+  private judgeHandOff: AbortController | null = null;
   private resumeInterruptedBuild = false;
   private isNew: boolean;
   private workspace: Workspace;
@@ -369,6 +372,18 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
     this.emit("reviewChanged");
   }
 
+  setManualReview(on: boolean): void {
+    if (typeof on !== "boolean") throw new Error("Choose on or off.");
+    if (this.state.status !== "running" || this.abort.signal.aborted) throw new Error("This run is not going.");
+    if (Boolean(this.state.manualReview) === on) return;
+    this.state.manualReview = on;
+    this.save();
+    this.emit("log", on ? "Manual review turned on: you will rule on the findings." : "Manual review turned off: the judge will rule on the findings.");
+    if (on) this.judgeHandOff?.abort();
+    else this.emit("reviewHandedBack");
+    this.emit("reviewChanged");
+  }
+
   submitReview(round: number): void {
     const record = this.pendingReview(round);
     const draft = new Map(record.reviewDraft?.map((d) => [d.id, d.verdict]));
@@ -381,13 +396,22 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
     this.emit("reviewSubmitted");
   }
 
-  private async manualTriage(record: RoundRecord): Promise<Triage> {
+  private async manualTriage(record: RoundRecord): Promise<Triage | null> {
     // A restart after submission but before the next step reuses the saved decisions.
     if (!record.decisions) {
-      const submitted = once(this, "reviewSubmitted", { signal: this.abort.signal });
-      this.phase("manual-review", record.round);
-      this.emit("manualReview", record, this.abort.signal);
-      await submitted;
+      const settled = new AbortController();
+      const signal = AbortSignal.any([this.abort.signal, settled.signal]);
+      const outcome = Promise.race([
+        once(this, "reviewSubmitted", { signal }).then(() => "submitted" as const),
+        once(this, "reviewHandedBack", { signal }).then(() => "judge" as const),
+      ]);
+      try {
+        this.phase("manual-review", record.round);
+        this.emit("manualReview", record, this.abort.signal);
+        if ((await outcome) === "judge") return null;
+      } finally {
+        settled.abort();
+      }
       this.checkStopped();
     }
     const fixes = toFix(record);
@@ -430,12 +454,14 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
     if (this.abort.signal.aborted) throw new RunStopped("stopped by user");
   }
 
-  private async withLimitPause<T>(round: number, attempt: (retry: number) => Promise<T>): Promise<T> {
+  private async withLimitPause<T>(
+    round: number, attempt: (retry: number) => Promise<T>, signal: AbortSignal = this.abort.signal,
+  ): Promise<T> {
     for (let retry = 0; ; retry++) {
       try {
         return await attempt(retry);
       } catch (err) {
-        if (!(err instanceof AgentError) || !err.limit || this.abort.signal.aborted) throw err;
+        if (!(err instanceof AgentError) || !err.limit || signal.aborted) throw err;
         const pause: LimitPause = {
           agent: err.agent,
           message: err.limit.message,
@@ -445,7 +471,7 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
         this.state.pausedFor = pause;
         this.save();
         this.phase("paused", round);
-        const resume = await this.hooks.waitForResume(pause, this.abort.signal);
+        const resume = await this.hooks.waitForResume(pause, signal);
         this.state.pausedFor = null;
         this.save();
         if (!resume) throw new RunStopped(`stopped while ${err.agent} was out of usage`);
@@ -508,7 +534,7 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
     return this.withLimitPause(0, () => chooseStart(ctx, prompt));
   }
 
-  private judgeTriage(record: RoundRecord): Promise<Triage> {
+  private async judgeTriage(record: RoundRecord): Promise<Triage | null> {
     const { round } = record;
     this.phase("judge", round);
     const earlierSkips = skippedSoFar(this.state.rounds.filter((r) => r.round < round));
@@ -525,8 +551,19 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
     });
     const dir = path.join(this.roundDir(round), "triage");
     mkdirSync(dir, { recursive: true });
-    const ctx = { ...this.context(this.roundDir(round), "judge"), workDir: dir, guides: [] };
-    return this.withLimitPause(round, () => runTriage(ctx, prompt, record.findings));
+    const handOff = new AbortController();
+    const signal = AbortSignal.any([this.abort.signal, handOff.signal]);
+    const ctx = { ...this.context(this.roundDir(round), "judge"), workDir: dir, guides: [], signal };
+    this.judgeHandOff = handOff;
+    try {
+      return await this.withLimitPause(round, () => runTriage(ctx, prompt, record.findings), signal);
+    } catch (err) {
+      // Manual review was turned on while the judge was ruling.
+      if (handOff.signal.aborted && !this.abort.signal.aborted) return null;
+      throw err;
+    } finally {
+      this.judgeHandOff = null;
+    }
   }
 
   private async loop(): Promise<void> {
@@ -741,8 +778,16 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
         state.cursor = { round, step: state.manualReview ? "manual-review" : "judge-triage" };
       } else if (step === "judge-triage" || step === "manual-review") {
         const record = recordFor(round)!;
+        const wanted = state.manualReview ? "manual-review" : "judge-triage";
+        if (step !== wanted && !record.decisions) {
+          state.cursor = { round, step: wanted };
+          this.save();
+          continue;
+        }
         const triage = step === "manual-review" ? await this.manualTriage(record) : await this.judgeTriage(record);
+        if (!triage) continue;
         record.decisions = triage.decisions;
+        record.reviewedBy = step === "manual-review" ? "you" : "judge";
         this.emit("triage", round, triage.decisions);
 
         if (!triage.instructions) {
