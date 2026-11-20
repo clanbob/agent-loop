@@ -1,0 +1,39 @@
+{
+  "studio": {
+    "mcpCommand": "cmd.exe",
+    "mcpArgs": ["/d", "/c", "%LOCALAPPDATA%\\Roblox\\mcp.bat"],
+    "placeId": 97262864777474,
+    "exportServices": [
+      "ServerScriptService",
+      "ReplicatedStorage",
+      "ReplicatedFirst",
+      "StarterPlayer",
+      "StarterGui",
+      "ServerStorage",
+      "Workspace"
+    ]
+  },
+  "agents": {
+    "judge": {
+      "command": "%LOCALAPPDATA%\\agy\\bin\\agy.exe",
+      "model": null
+    },
+    "builder": {
+      "command": "claude",
+      "model": null
+    },
+    "reviewer": {
+      "command": "codex",
+      "model": null
+    }
+  },
+  "guides": [
+    "%USERPROFILE%\\.claude\\ARCHITECTURE.md",
+    "%USERPROFILE%\\.claude\\CODE_STYLE.md"
+  ],
+  "limits": {
+    "roundsBeforePause": 10,
+    "agentTimeoutMinutes": 40,
+    "repeatedFindingPause": 2
+  }
+}

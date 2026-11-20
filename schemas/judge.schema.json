@@ -1,0 +1,8 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["instructions"],
+  "properties": {
+    "instructions": { "type": "string" }
+  }
+}

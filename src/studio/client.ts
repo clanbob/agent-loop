@@ -1,0 +1,70 @@
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import type { Config } from "../config.ts";
+
+export interface StudioInfo {
+  id: string;
+  name: string;
+  mode: string;
+  placeId?: number;
+}
+
+export class StudioClient {
+  private client: Client;
+  private transport: StdioClientTransport;
+  studioId = "";
+
+  private constructor(client: Client, transport: StdioClientTransport) {
+    this.client = client;
+    this.transport = transport;
+  }
+
+  static async connect(config: Config): Promise<StudioClient> {
+    const transport = new StdioClientTransport({
+      command: config.studio.mcpCommand,
+      args: config.studio.mcpArgs,
+      env: process.env as Record<string, string>,
+      stderr: "ignore",
+    });
+    const client = new Client({ name: "agent-loop", version: "0.1.0" });
+    await client.connect(transport);
+    const studio = new StudioClient(client, transport);
+    await studio.selectStudio(config.studio.placeId);
+    return studio;
+  }
+
+  private async callText(name: string, args: Record<string, unknown>): Promise<string> {
+    const result = await this.client.callTool({ name, arguments: args }, undefined, { timeout: 120_000 });
+    const content = (result.content ?? []) as Array<{ type: string; text?: string }>;
+    const text = content.filter((c) => c.type === "text").map((c) => c.text ?? "").join("\n");
+    if (result.isError) throw new Error(`Studio MCP ${name} failed: ${text}`);
+    return text;
+  }
+
+  async listStudios(): Promise<StudioInfo[]> {
+    const text = await this.callText("list_roblox_studios", {});
+    return (JSON.parse(text).studios ?? []) as StudioInfo[];
+  }
+
+  private async selectStudio(placeId: number | null): Promise<void> {
+    const studios = await this.listStudios();
+    if (studios.length === 0) throw new Error("No Roblox Studio is connected. Open the place in Studio first.");
+    const match = placeId == null ? studios[0] : studios.find((s) => s.placeId === placeId);
+    if (!match) {
+      throw new Error(
+        `Studio with placeId ${placeId} is not open. Open studios: ${studios.map((s) => s.name).join(", ")}`,
+      );
+    }
+    if (match.mode !== "Edit") throw new Error(`Studio "${match.name}" is in ${match.mode} mode. Stop play mode first.`);
+    this.studioId = match.id;
+  }
+
+  async runLuau(code: string): Promise<string> {
+    return this.callText("execute_luau", { code, datamodel_type: "Edit", studio_id: this.studioId });
+  }
+
+  async close(): Promise<void> {
+    await this.client.close().catch(() => {});
+    await this.transport.close().catch(() => {});
+  }
+}

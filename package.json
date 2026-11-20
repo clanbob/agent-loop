@@ -1,0 +1,23 @@
+{
+  "name": "agent-loop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Loops Antigravity (judge), Claude Code (builder) and Codex (reviewer) on Roblox Studio code until Codex reports zero findings.",
+  "type": "module",
+  "engines": {
+    "node": ">=23.6"
+  },
+  "scripts": {
+    "loop": "node src/cli.ts run",
+    "export": "node src/cli.ts export",
+    "check": "node src/cli.ts check",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}
