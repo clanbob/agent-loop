@@ -21,15 +21,20 @@ export class StudioClient {
 
   static async connect(config: Config): Promise<StudioClient> {
     const transport = new StdioClientTransport({
-      command: config.studio.mcpCommand,
-      args: config.studio.mcpArgs,
+      command: config.roblox.mcpCommand,
+      args: config.roblox.mcpArgs,
       env: process.env as Record<string, string>,
       stderr: "ignore",
     });
     const client = new Client({ name: "agent-loop", version: "0.1.0" });
     await client.connect(transport);
     const studio = new StudioClient(client, transport);
-    await studio.selectStudio(config.studio.placeId);
+    try {
+      await studio.selectStudio(config.roblox.placeId);
+    } catch (err) {
+      await studio.close();
+      throw err;
+    }
     return studio;
   }
 

@@ -1,5 +1,25 @@
 {
-  "studio": {
+  "agents": {
+    "judge": {
+      "command": "%LOCALAPPDATA%\\agy\\bin\\agy.exe",
+      "model": "gemini-4-neon-medium",
+      "effort": null
+    },
+    "builder": {
+      "command": "claude",
+      "model": null
+    },
+    "reviewer": {
+      "command": "codex",
+      "model": null
+    }
+  },
+  "folder": {
+    "guides": [],
+    "builderTools": ["Read", "Edit", "Write", "Grep", "Glob", "Bash", "PowerShell"],
+    "testTimeoutMinutes": 15
+  },
+  "roblox": {
     "mcpCommand": "cmd.exe",
     "mcpArgs": ["/d", "/c", "%LOCALAPPDATA%\\Roblox\\mcp.bat"],
     "placeId": 97262864777474,
@@ -11,26 +31,13 @@
       "StarterGui",
       "ServerStorage",
       "Workspace"
+    ],
+    "guides": [
+      "%USERPROFILE%\\.claude\\ARCHITECTURE.md",
+      "%USERPROFILE%\\.claude\\CODE_STYLE.md"
     ]
   },
-  "agents": {
-    "judge": {
-      "command": "%LOCALAPPDATA%\\agy\\bin\\agy.exe",
-      "model": null
-    },
-    "builder": {
-      "command": "claude",
-      "model": null
-    },
-    "reviewer": {
-      "command": "codex",
-      "model": null
-    }
-  },
-  "guides": [
-    "%USERPROFILE%\\.claude\\ARCHITECTURE.md",
-    "%USERPROFILE%\\.claude\\CODE_STYLE.md"
-  ],
+  "deleteRunFolder": "onClean",
   "limits": {
     "roundsBeforePause": 10,
     "agentTimeoutMinutes": 40,

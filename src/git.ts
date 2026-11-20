@@ -5,7 +5,12 @@ import path from "node:path";
 const IDENTITY = ["-c", "user.name=agent-loop", "-c", "user.email=agent-loop@localhost"];
 
 export function git(cwd: string, args: string[]): string {
-  return execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+  return execFileSync("git", ["-c", "core.safecrlf=false", ...args], {
+    cwd,
+    encoding: "utf8",
+    maxBuffer: 256 * 1024 * 1024,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
 }
 
 export function ensureRepo(dir: string): void {

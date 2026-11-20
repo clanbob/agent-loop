@@ -193,7 +193,7 @@ export async function readAllScripts(studio: StudioClient, services: string[]): 
 }
 
 export function mirrorDirFor(config: Config): string {
-  return path.join(config.root, "mirror", String(config.studio.placeId ?? "default"));
+  return path.join(config.root, "mirror", String(config.roblox.placeId ?? "default"));
 }
 
 export async function exportPlace(config: Config, message: string): Promise<ExportResult> {
@@ -203,7 +203,7 @@ export async function exportPlace(config: Config, message: string): Promise<Expo
   const studio = await StudioClient.connect(config);
   let scripts: ScriptEntry[];
   try {
-    scripts = await readAllScripts(studio, config.studio.exportServices);
+    scripts = await readAllScripts(studio, config.roblox.exportServices);
   } finally {
     await studio.close();
   }

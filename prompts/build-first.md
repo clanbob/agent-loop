@@ -8,4 +8,4 @@ The coordinator's instructions:
 {{instructions}}
 </instructions>
 
-Implement this now in Roblox Studio.
+Implement this now.
