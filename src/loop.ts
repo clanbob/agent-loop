@@ -34,6 +34,18 @@ export interface SkippedFinding {
   reason: string;
 }
 
+export interface TimelineEntry {
+  phase: Phase;
+  round: number;
+  at: string;
+}
+
+export interface TimelineEntry {
+  phase: Phase;
+  round: number;
+  at: string;
+}
+
 export interface LimitPause {
   agent: string;
   message: string;
@@ -41,10 +53,19 @@ export interface LimitPause {
   round: number;
 }
 
+export type AgentChoice = { model: string | null; effort: string | null };
+
+export interface AgentChoices {
+  judge: AgentChoice;
+  builder: AgentChoice;
+  reviewer: AgentChoice;
+}
+
 export interface RunState {
   id: string;
   task: string;
   workspace: WorkspaceSpec;
+  agents: AgentChoices | null;
   status: "running" | "clean" | "stopped" | "failed";
   cursor: { round: number; step: Step };
   baselineCommit: string;
@@ -64,6 +85,7 @@ export interface RunState {
   endReason: "no-findings" | "rest-skipped" | null;
   resultNote: string | null;
   pausedFor: LimitPause | null;
+  timeline: TimelineEntry[];
   pid: number | null;
   startedAt: string;
   resumedAt: string[];
@@ -172,11 +194,28 @@ function isAlive(pid: number | null): boolean {
 }
 
 function runsDir(config: Config): string {
-  return path.join(config.root, "runs");
+  return path.join(config.dataDir, "runs");
 }
 
 function readState(runDir: string): RunState {
   return JSON.parse(readFileSync(path.join(runDir, "run.json"), "utf8")) as RunState;
+}
+
+function withAgentChoices(config: Config, choices: AgentChoices | null | undefined): Config {
+  if (!choices) return config;
+  const pick = (base: Config["agents"]["judge"], choice: AgentChoice | undefined) => ({
+    ...base,
+    model: choice?.model || base.model,
+    effort: choice?.effort || base.effort,
+  });
+  return {
+    ...config,
+    agents: {
+      judge: pick(config.agents.judge, choices.judge),
+      builder: pick(config.agents.builder, choices.builder),
+      reviewer: pick(config.agents.reviewer, choices.reviewer),
+    },
+  };
 }
 
 export function newRunId(): string {
@@ -224,14 +263,23 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
     this.state = state;
     this.runDir = path.join(runsDir(config), state.id);
     this.isNew = isNew;
-    this.workspace = createWorkspace(config, state.workspace);
+    this.config = withAgentChoices(config, state.agents);
+    this.workspace = createWorkspace(this.config, state.workspace);
   }
 
-  static start(config: Config, id: string, task: string, workspace: WorkspaceSpec, hooks: LoopHooks): AgentLoop {
+  static start(
+    config: Config,
+    id: string,
+    task: string,
+    workspace: WorkspaceSpec,
+    hooks: LoopHooks,
+    agents: AgentChoices | null = null,
+  ): AgentLoop {
     const state: RunState = {
       id,
       task,
       workspace,
+      agents,
       status: "running",
       cursor: { round: 0, step: "prepare" },
       baselineCommit: "",
@@ -246,6 +294,7 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
       endReason: null,
       resultNote: null,
       pausedFor: null,
+      timeline: [],
       pid: process.pid,
       startedAt: new Date().toISOString(),
       resumedAt: [],
@@ -284,6 +333,11 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
 
   stop(): void {
     this.abort.abort();
+  }
+
+  private phase(phase: Phase, round: number): void {
+    (this.state.timeline ??= []).push({ phase, round, at: new Date().toISOString() });
+    this.emit("phase", phase, round);
   }
 
   private save(): void {
@@ -326,7 +380,7 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
         };
         this.state.pausedFor = pause;
         this.save();
-        this.emit("phase", "paused", round);
+        this.phase("paused", round);
         const resume = await this.hooks.waitForResume(pause, this.abort.signal);
         this.state.pausedFor = null;
         this.save();
@@ -350,7 +404,7 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
       const stopped = this.abort.signal.aborted || err instanceof RunStopped;
       this.state.status = stopped ? "stopped" : "failed";
       this.state.error = (err as Error).message;
-      this.emit("phase", stopped ? "stopped" : "failed", this.state.cursor.round);
+      this.phase(stopped ? "stopped" : "failed", this.state.cursor.round);
     }
 
     try {
@@ -397,12 +451,12 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
       const { round, step } = state.cursor;
 
       if (step === "prepare") {
-        this.emit("phase", "prepare", 0);
+        this.phase("prepare", 0);
         state.baselineCommit = await workspace.prepare();
         this.emit("log", `Working on ${workspace.label} (starting point ${state.baselineCommit.slice(0, 8)})`);
         state.cursor = { round: 0, step: "judge-start" };
       } else if (step === "judge-start") {
-        this.emit("phase", "judge", 0);
+        this.phase("judge", 0);
         const prompt = fillPrompt(config.root, "judge-start", {
           task: state.task,
           workspace: workspace.notes.judge,
@@ -424,7 +478,7 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
           this.save();
         }
 
-        this.emit("phase", "build", round);
+        this.phase("build", round);
         const instructions = state.instructions ?? "";
         const buildPrompt =
           round === 1
@@ -464,7 +518,7 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
         state.currentBuild = { summary: build.summary, costUsd: build.costUsd };
         state.cursor = { round, step: "snapshot" };
       } else if (step === "snapshot") {
-        this.emit("phase", "snapshot", round);
+        this.phase("snapshot", round);
         const roundDir = this.roundDir(round);
         const commit = await workspace.snapshot(`agent-loop run ${state.id}: round ${round}`);
         const previousCommit = recordFor(round - 1)?.commit ?? state.baselineCommit;
@@ -497,7 +551,7 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
 
         let test: NonNullable<RunState["currentSnapshot"]>["test"] = null;
         if (state.workspace.testCommand) {
-          this.emit("phase", "test", round);
+          this.phase("test", round);
           test = await runTests(
             state.workspace.testCommand,
             workspace.workDir,
@@ -512,7 +566,7 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
         state.currentSnapshot = { commit, changedFiles: roundFiles, diffFile, test };
         state.cursor = { round, step: "review" };
       } else if (step === "review") {
-        this.emit("phase", "review", round);
+        this.phase("review", round);
         const snap = state.currentSnapshot!;
         const previousFixes = toFix(recordFor(round - 1));
         const previousBlock =
@@ -565,12 +619,12 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
         if (review.findings.length === 0) {
           state.endReason = "no-findings";
           this.save();
-          this.emit("phase", "done", round);
+          this.phase("done", round);
           return;
         }
         state.cursor = { round, step: "judge-triage" };
       } else if (step === "judge-triage") {
-        this.emit("phase", "judge", round);
+        this.phase("judge", round);
         const record = recordFor(round)!;
         const earlierSkips = skippedSoFar(state.rounds.filter((r) => r.round < round));
         const prompt = fillPrompt(config.root, "judge-triage", {
@@ -594,7 +648,7 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
         if (!triage.instructions) {
           state.endReason = "rest-skipped";
           this.save();
-          this.emit("phase", "done", round);
+          this.phase("done", round);
           return;
         }
         state.instructions = triage.instructions;

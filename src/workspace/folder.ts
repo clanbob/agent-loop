@@ -34,7 +34,7 @@ export function folderSpec(
     guides: [...config.folder.guides, ...guides].map((g) => path.resolve(g)),
     testCommand,
     branch: `agentloop/${runId}`,
-    worktree: path.join(config.root, "worktrees", runId),
+    worktree: path.join(config.dataDir, "worktrees", runId),
   };
 }
 

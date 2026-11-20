@@ -77,24 +77,29 @@ export function runProcess(opts: RunOptions): Promise<RunResult> {
   let stdout = "";
   let stderr = "";
   let pending = "";
+  let pendingErr = "";
   let timedOut = false;
   let aborted = false;
 
   child.stdout.setEncoding("utf8");
   child.stderr.setEncoding("utf8");
 
+  const splitLines = (buffer: string, chunk: string): string => {
+    const lines = (buffer + chunk).split(/\r?\n/);
+    const rest = lines.pop() ?? "";
+    for (const line of lines) opts.onLine?.(line);
+    return rest;
+  };
+
   child.stdout.on("data", (chunk: string) => {
     stdout += chunk;
     log.write(chunk);
-    if (!opts.onLine) return;
-    pending += chunk;
-    const lines = pending.split(/\r?\n/);
-    pending = lines.pop() ?? "";
-    for (const line of lines) opts.onLine(line);
+    if (opts.onLine) pending = splitLines(pending, chunk);
   });
   child.stderr.on("data", (chunk: string) => {
     stderr += chunk;
     log.write(chunk);
+    if (opts.onLine) pendingErr = splitLines(pendingErr, chunk);
   });
 
   if (opts.stdin !== undefined) child.stdin.end(opts.stdin, "utf8");
@@ -121,6 +126,7 @@ export function runProcess(opts: RunOptions): Promise<RunResult> {
       clearTimeout(timer);
       opts.signal?.removeEventListener("abort", onAbort);
       if (pending && opts.onLine) opts.onLine(pending);
+      if (pendingErr && opts.onLine) opts.onLine(pendingErr);
       log.end(`\n[exit ${code}${timedOut ? ", timed out" : ""}${aborted ? ", stopped" : ""}]\n`);
       resolve({ code, stdout, stderr, timedOut, aborted });
     });

@@ -193,7 +193,7 @@ export async function readAllScripts(studio: StudioClient, services: string[]): 
 }
 
 export function mirrorDirFor(config: Config): string {
-  return path.join(config.root, "mirror", String(config.roblox.placeId ?? "default"));
+  return path.join(config.dataDir, "mirror", String(config.roblox.placeId ?? "default"));
 }
 
 export async function exportPlace(config: Config, message: string): Promise<ExportResult> {

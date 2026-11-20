@@ -9,6 +9,7 @@ export interface AgentConfig {
 
 export interface Config {
   root: string;
+  dataDir: string;
   agents: {
     judge: AgentConfig;
     builder: AgentConfig;
@@ -38,7 +39,7 @@ export function expandEnv(value: string): string {
   return value.replace(/%([^%]+)%/g, (whole, name: string) => process.env[name] ?? whole);
 }
 
-export function loadConfig(root: string, configFile?: string): Config {
+export function loadConfig(root: string, configFile?: string, dataDir: string = root): Config {
   const file = configFile ? path.resolve(configFile) : path.join(root, "agentloop.config.json");
   if (!existsSync(file)) throw new Error(`Missing config file: ${file}`);
   const raw = JSON.parse(readFileSync(file, "utf8"));
@@ -53,6 +54,7 @@ export function loadConfig(root: string, configFile?: string): Config {
 
   return {
     root,
+    dataDir,
     agents: {
       judge: agent(raw.agents.judge),
       builder: agent(raw.agents.builder),

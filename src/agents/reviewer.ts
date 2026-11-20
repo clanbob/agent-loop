@@ -28,6 +28,7 @@ export async function runReviewer(ctx: StepContext, prompt: string): Promise<Rev
     workDir,
   ];
   if (config.agents.reviewer.model) args.push("-m", config.agents.reviewer.model);
+  if (config.agents.reviewer.effort) args.push("-c", `model_reasoning_effort=${config.agents.reviewer.effort}`);
   args.push("-");
 
   const result = await runProcess({

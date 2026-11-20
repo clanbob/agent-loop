@@ -2,11 +2,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline/promises";
-import { execFileSync } from "node:child_process";
 import { loadConfig, type Config } from "./config.ts";
 import { exportPlace } from "./studio/exporter.ts";
-import { StudioClient } from "./studio/client.ts";
-import { resolveCommand } from "./proc.ts";
+import { checkTools } from "./check.ts";
 import { AgentLoop, listRuns, newRunId, skippedSoFar, type LimitPause, type PauseRequest } from "./loop.ts";
 import { folderSpec, robloxSpec } from "./workspace/index.ts";
 
@@ -30,32 +28,10 @@ function parseArgs(argv: string[]): { command: string; flags: Map<string, string
 }
 
 async function check(config: Config): Promise<void> {
-  const tools: Array<[string, string, string[]]> = [
-    ["Judge (Antigravity)", config.agents.judge.command, ["--version"]],
-    ["Builder (Claude)", config.agents.builder.command, ["--version"]],
-    ["Reviewer (Codex)", config.agents.reviewer.command, ["--version"]],
-  ];
-  for (const [label, command, args] of tools) {
-    try {
-      const exe = resolveCommand(command);
-      const shell = /\.(cmd|bat)$/i.test(exe);
-      const out = execFileSync(shell ? "cmd.exe" : exe, shell ? ["/d", "/c", exe, ...args] : args, {
-        encoding: "utf8",
-        timeout: 30_000,
-      });
-      console.log(`OK    ${label}: ${out.trim().split(/\r?\n/)[0]}`);
-    } catch (err) {
-      console.log(`FAIL  ${label}: ${(err as Error).message.split("\n")[0]}`);
-    }
-  }
-  try {
-    const studio = await StudioClient.connect(config);
-    const studios = await studio.listStudios();
-    const chosen = studios.find((s) => s.id === studio.studioId);
-    console.log(`OK    Roblox Studio: ${chosen?.name ?? studio.studioId}`);
-    await studio.close();
-  } catch (err) {
-    console.log(`--    Roblox Studio (only needed for --roblox runs): ${(err as Error).message}`);
+  for (const tool of await checkTools(config)) {
+    const optional = tool.name === "Roblox Studio" && !tool.ok;
+    const mark = tool.ok ? "OK  " : optional ? "--  " : "FAIL";
+    console.log(`${mark}  ${tool.name}${optional ? " (only needed for --roblox runs)" : ""}: ${tool.detail}`);
   }
 }
 
