@@ -73,6 +73,17 @@ function quoteForCmd(arg: string): string {
   return `"${arg.replace(/"/g, '""')}"`;
 }
 
+export function commandLine(exe: string, args: string[]) {
+  if (IS_WINDOWS && /\.(cmd|bat)$/i.test(exe)) {
+    return {
+      file: "cmd.exe",
+      args: ["/d", "/s", "/c", `"${[exe, ...args].map(quoteForCmd).join(" ")}"`],
+      windowsVerbatimArguments: true,
+    };
+  }
+  return { file: exe, args, windowsVerbatimArguments: false };
+}
+
 export function killTree(pid: number | undefined): void {
   if (!pid) return;
   if (IS_WINDOWS) {
@@ -97,15 +108,11 @@ export function killTree(pid: number | undefined): void {
 
 export function runProcess(opts: RunOptions): Promise<RunResult> {
   const exe = resolveCommand(opts.command);
-  const isScript = IS_WINDOWS && /\.(cmd|bat)$/i.test(exe);
-
-  const child = isScript
-    ? spawn("cmd.exe", ["/d", "/s", "/c", `"${[quoteForCmd(exe), ...opts.args.map(quoteForCmd)].join(" ")}"`], {
-        cwd: opts.cwd,
-        windowsVerbatimArguments: true,
-        windowsHide: true,
-      })
-    : spawn(exe, opts.args, { cwd: opts.cwd, windowsHide: true, detached: !IS_WINDOWS });
+  const invocation = commandLine(exe, opts.args);
+  const child = spawn(invocation.file, invocation.args, {
+    cwd: opts.cwd, windowsHide: true, detached: !IS_WINDOWS,
+    windowsVerbatimArguments: invocation.windowsVerbatimArguments,
+  });
 
   const log = createWriteStream(opts.logFile, { flags: "a" });
   log.write(`$ ${exe} ${opts.hideArgs ? "(MCP configuration omitted)" : opts.args.join(" ")}\n(cwd ${opts.cwd})\n\n`);
@@ -138,6 +145,9 @@ export function runProcess(opts: RunOptions): Promise<RunResult> {
     if (opts.onLine) pendingErr = splitLines(pendingErr, chunk);
   });
 
+  // A CLI can reject its flags and exit while a large prompt is still being written.
+  let stdinError: Error | null = null;
+  child.stdin.on("error", (err) => { stdinError = err; });
   if (opts.stdin !== undefined) child.stdin.end(opts.stdin, "utf8");
   else child.stdin.end();
 
@@ -164,6 +174,7 @@ export function runProcess(opts: RunOptions): Promise<RunResult> {
       if (pending && opts.onLine) opts.onLine(pending);
       if (pendingErr && opts.onLine) opts.onLine(pendingErr);
       log.end(`\n[exit ${code}${timedOut ? ", timed out" : ""}${aborted ? ", stopped" : ""}]\n`);
+      if (stdinError && code === 0 && !timedOut && !aborted) return reject(stdinError);
       resolve({ code, stdout, stderr, timedOut, aborted });
     });
   });

@@ -4,12 +4,37 @@ const fs = require("node:fs");
 exports.run = function run(provider, trace, args) {
   const input = fs.readFileSync(0, "utf8");
   const value = (flag) => args.includes(flag) ? args[args.indexOf(flag) + 1] : null;
+  if (provider === "antigravity" && args[0] === "models") {
+    console.log("gemini-example-low\tGemini Example (Low)\ngemini-example-high\tGemini Example (High)\ngemini-flash\tGemini Flash");
+    return;
+  }
+  if (provider === "codex" && args.join(" ") === "debug models") {
+    console.log(JSON.stringify({ models: [
+      { slug: "codex-new", display_name: "Codex New", supported_reasoning_levels: [{ effort: "high" }] },
+      { slug: "codex-small", display_name: "Codex Small" }, { slug: "internal", visibility: "hide" },
+    ] }));
+    return;
+  }
+  if (provider === "claude" && value("--input-format") === "stream-json") {
+    const init = JSON.parse(input);
+    if (init.type !== "control_request" || init.request.subtype !== "initialize") throw Error("Expected metadata only");
+    console.log(JSON.stringify({ type: "control_response", response: {
+      subtype: "success", request_id: init.request_id, response: { models: [
+        { value: "opus", displayName: "Opus", resolvedModel: "claude-opus-example", supportedEffortLevels: ["high", "max"] },
+        { value: "another-model", displayName: "Another model", supportsEffort: false },
+      ] },
+    } }));
+    return;
+  }
   let schema;
   if (provider === "codex") {
     if (args[0] !== "exec" || !value("-o")) throw Error("Expected codex exec with an output file");
     schema = JSON.parse(fs.readFileSync(value("--output-schema"), "utf8"));
   } else if (provider === "antigravity") {
-    if (!args.includes("--print") || !value("--mode")) throw Error("Expected agy print mode");
+    if (args.some((arg) => arg === "--print" || arg.startsWith("--print=")) || !input.trim()) {
+      throw Error("Expected the Antigravity prompt on stdin only");
+    }
+    if (!value("--mode") || value("--output-format") !== "json") throw Error("Expected agy JSON output");
     schema = JSON.parse(fs.readFileSync(value("--json-schema"), "utf8"));
   } else {
     if (!args.includes("-p")) throw Error("Expected claude print mode");

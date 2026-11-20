@@ -1,10 +1,45 @@
 import { useEffect, useState } from "react";
 import { DEFAULT_CHOICES, PROVIDERS, PROVIDER_NAMES, ROLES, type AgentChoices, type Provider, type Role } from "../../src/roles.ts";
-import type { ModelCatalog } from "../shared/api.ts";
+import type { AgentModels, ModelCatalog } from "../shared/api.ts";
 import { api } from "./api.ts";
 
 const ROLE_LABEL = { judge: "Judge", builder: "Builder", reviewer: "Reviewer" };
 const EFFORT_LABEL: Record<string, string> = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max", ultra: "Ultra" };
+
+const PROVIDER_LABEL = { ...PROVIDER_NAMES, antigravity: "Gemini (Antigravity)" };
+
+function ModelPicker({ name, info, model, onChange }: {
+  name: string;
+  info?: AgentModels;
+  model: string | null;
+  onChange: (model: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const selected = model || info?.defaultModel || "";
+  const options = info?.models ?? [];
+  return (
+    <div className="model-picker">
+      <select aria-label={`${name} model`} disabled={!info} value={editing ? "" : selected}
+        onChange={(e) => {
+          setEditing(!e.target.value);
+          if (e.target.value) onChange(e.target.value);
+        }}>
+        {selected && !options.some((option) => option.id === selected) && <option value={selected}>{selected}</option>}
+        {options.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+        <option value="">{info ? "Enter a model ID…" : "Loading models…"}</option>
+      </select>
+      {editing && (
+        <input aria-label={`${name} custom model ID`} value={model ?? ""} placeholder="Model ID" autoFocus spellCheck={false}
+          onFocus={(e) => e.currentTarget.select()} onChange={(e) => onChange(e.target.value)}
+          onBlur={() => {
+            onChange(model?.trim() || info?.defaultModel || "");
+            setEditing(false);
+          }}
+          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} />
+      )}
+    </div>
+  );
+}
 
 export function ModelsMenu({ scopeLabel, choices, onChange }: {
   scopeLabel: string;
@@ -40,6 +75,10 @@ export function ModelsMenu({ scopeLabel, choices, onChange }: {
     return `${ROLE_LABEL[role]}: ${label || "Provider default"}`;
   }).join("   |   ");
 
+  const shown = PROVIDERS.filter((p) => ROLES.some((role) => (choices[role].provider ?? DEFAULT_CHOICES[role].provider) === p));
+  const suggestions = shown.filter((p) => catalog?.[p].source === "suggestions").map((p) => PROVIDER_LABEL[p]);
+  const fromCache = shown.filter((p) => catalog?.[p].source === "cache").map((p) => PROVIDER_LABEL[p]);
+
   return (
     <div className={`models ${open ? "open" : ""}`}>
       <button className="models-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
@@ -63,21 +102,14 @@ export function ModelsMenu({ scopeLabel, choices, onChange }: {
               return (
                 <div key={role} className="models-row">
                   <strong>{name}</strong>
-                  <select aria-label={`${name} provider`} value={provider} onChange={(e) => {
+                  <select aria-label={`${name} provider`} value={provider} disabled={!catalog} onChange={(e) => {
                     const next = e.target.value as Provider;
                     selectModel(role, next, catalog?.[next].defaultModel ?? "");
                   }}>
-                    {PROVIDERS.map((p) => <option key={p} value={p}>{PROVIDER_NAMES[p]}</option>)}
+                    {PROVIDERS.map((p) => <option key={p} value={p}>{PROVIDER_LABEL[p]}</option>)}
                   </select>
-                  <div>
-                    <input aria-label={`${name} model`} list={`${role}-models`} value={choice.model ?? ""}
-                      placeholder={info?.defaultModel ?? "Model ID"} spellCheck={false}
-                      onFocus={(e) => e.currentTarget.select()}
-                      onChange={(e) => selectModel(role, provider, e.target.value)} />
-                    <datalist id={`${role}-models`}>
-                      {info?.models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-                    </datalist>
-                  </div>
+                  <ModelPicker key={`${scopeLabel}:${provider}`} name={name} info={info} model={choice.model}
+                    onChange={(model) => selectModel(role, provider, model)} />
                   <select aria-label={`${name} effort`} value={choice.effort ?? ""} disabled={!efforts.length}
                     onChange={(e) => onChange({ ...choices, [role]: { ...choice, provider, effort: e.target.value || null } })}>
                     <option value="">Provider default</option>
@@ -88,7 +120,11 @@ export function ModelsMenu({ scopeLabel, choices, onChange }: {
             })}
           </div>
           <div className="models-foot">
-            <span className="hint">{error || `Saved for ${scopeLabel}. You can also enter a model ID.`}</span>
+            <span className="hint" aria-live="polite">
+              {error || (catalog ? `Saved for ${scopeLabel}.` : "Loading model lists…")}
+              {suggestions.length > 0 && ` Showing built-in suggestions for ${suggestions.join(", ")}. Check CLI sign-in and refresh for the current list.`}
+              {fromCache.length > 0 && ` Showing the last available list for ${fromCache.join(", ")}.`}
+            </span>
             <span className="models-actions">
               <button className="btn btn-small" onClick={() => onChange(DEFAULT_CHOICES)}>Reset</button>
               <button className="btn btn-small btn-ghost" onClick={() => load(true)} disabled={loading}>

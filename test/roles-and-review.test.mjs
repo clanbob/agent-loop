@@ -6,7 +6,9 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { loadConfig, withAgentChoices } from "../src/config.ts";
+import { runReviewer } from "../src/agents/reviewer.ts";
 import { runBuilder } from "../src/agents/builder.ts";
+import { modelCatalog } from "../src/models.ts";
 import { AgentLoop } from "../src/loop.ts";
 import { DEFAULT_CHOICES, PROVIDERS, ROLES } from "../src/roles.ts";
 import { toolsSpec } from "../src/workspace/tools.ts";
@@ -41,6 +43,39 @@ function oneModel(provider) {
   return Object.fromEntries(ROLES.map((r) => [r, { provider, model: "custom-model", effort: null }]));
 }
 
+test("model lists come from each CLI, including exact Claude versions and Gemini effort variants", async (t) => {
+  const { config } = setup(t);
+  const catalog = await modelCatalog(config);
+  assert.deepEqual(catalog.codex.models.map((m) => m.id), ["codex-new", "codex-small"]);
+  assert.deepEqual(catalog.claude.models.map((m) => m.id), ["opus", "claude-opus-example", "another-model"]);
+  assert.deepEqual(catalog.claude.models[1].efforts, ["high", "max"]);
+  assert.deepEqual(catalog.antigravity.models, [
+    { id: "gemini-example", label: "Gemini Example", efforts: ["low", "high"] },
+    { id: "gemini-flash", label: "Gemini Flash", efforts: [] },
+  ]);
+
+  writeFileSync(path.join(config.dataDir, "antigravity.cjs"), '#!/usr/bin/env node\nconsole.log("gemini-new\\tNew Gemini");');
+  assert.equal(await modelCatalog(config), catalog);
+  const refreshed = await modelCatalog(config, true);
+  assert.deepEqual(refreshed.antigravity.models.map((m) => m.id), ["gemini-new"]);
+  config.agents.judge.command = path.join(config.dataDir, "unavailable");
+  const offline = await modelCatalog(config, true);
+  assert.equal(offline.antigravity.source, "cache");
+  assert.deepEqual(offline.antigravity.models, refreshed.antigravity.models);
+});
+
+test("when discovery is unavailable the picker has multiple labeled suggestions", async (t) => {
+  const { config } = setup(t);
+  config.agents.judge.command = path.join(config.dataDir, "unavailable");
+  config.agents.builder.command = path.join(config.dataDir, "unavailable");
+  const catalog = await modelCatalog(config);
+  for (const provider of ["antigravity", "claude"]) {
+    assert.equal(catalog[provider].source, "suggestions");
+    assert(catalog[provider].models.length > 1);
+  }
+  assert.equal(catalog.codex.source, "cli");
+});
+
 for (const provider of PROVIDERS) {
   test(`one ${provider} model can plan, review, triage and build`, async (t) => {
     const env = setup(t);
@@ -74,6 +109,19 @@ test("file builders use the selected provider's edit mode in the project directo
     assert(call.args.includes(provider === "codex" ? "workspace-write" : "accept-edits"));
     assert.match(call.input, /Edit only the inventory files/);
   }
+});
+
+test("Antigravity receives the entire Studio review on stdin, beyond the Windows command-line limit", async (t) => {
+  const env = setup(t);
+  const config = withAgentChoices(env.config, oneModel("antigravity"));
+  const dir = config.dataDir;
+  const ctx = { config, runDir: dir, roundDir: dir, workDir: dir, guides: [], signal: new AbortController().signal };
+  const prompt = "Review the Zone module.\n" + 'local zone = "温室" -- %PATH% & flags\n'.repeat(6000);
+  const review = await runReviewer(ctx, prompt);
+  assert.equal(review.findings.length, 2);
+  const [call] = env.calls();
+  assert.equal(call.input, prompt);
+  assert(!call.args.some((arg) => arg.includes("Review the Zone module")));
 });
 
 test("a saved run without provider IDs still uses its original three commands", (t) => {

@@ -37,7 +37,8 @@ function antigravityArgs(
   writeFileSync(settings, JSON.stringify({ permissions: { allow, deny } }));
   const dirs = new Set([ctx.workDir, configDir, ...ctx.guides.map((g) => path.dirname(g)), ...(builder?.addDirs ?? [])]);
   return [
-    "--print", "--output-format", "json", "--json-schema", schema, "--settings", settings,
+    // agy enters print mode from piped stdin. An explicit --print takes its prompt from argv.
+    "--output-format", "json", "--json-schema", schema, "--settings", settings,
     "--mode", builder ? "accept-edits" : "plan",
     ...Array.from(dirs).flatMap((dir) => ["--add-dir", dir]),
     ...(agent.model ? ["--model", antigravityModelId(agent.model, agent.effort)] : []),
