@@ -18,6 +18,13 @@ A single server, a URL or a command line
 (npx -y @playwright/mcp@latest) also works.
 Several servers at once become several tools.`;
 
+function unwrap(tool: McpTool): object {
+  const s = tool.server;
+  if ("url" in s) return s;
+  const args = s.args ?? [];
+  return s.command === "cmd" && args[0] === "/c" ? { ...s, command: args[1], args: args.slice(2) } : s;
+}
+
 function describe(tool: McpTool): string {
   const s = tool.server;
   if ("url" in s) return s.url;
@@ -50,6 +57,7 @@ export function EnvironmentDialog({
   const [pasteName, setPasteName] = useState("");
   const [pasteText, setPasteText] = useState("");
   const [parsed, setParsed] = useState<ParsedServers | null>(null);
+  const [editingTool, setEditingTool] = useState<McpTool | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [closing, setClosing] = useState(false);
@@ -103,9 +111,37 @@ export function EnvironmentDialog({
     }
   };
 
+  const startEditTool = (tool: McpTool) => {
+    setEditingTool(tool);
+    setPasteName(tool.name);
+    setPasteText(JSON.stringify(unwrap(tool), null, 2));
+    setAdding(true);
+  };
+
+  const closePaste = () => {
+    setAdding(false);
+    setEditingTool(null);
+    setPasteText("");
+    setPasteName("");
+    setParsed(null);
+  };
+
   const addTools = async () => {
     if (!parsed || parsed.described.length === 0) return;
     setError("");
+    if (editingTool) {
+      try {
+        const [server] = Object.values(parsed.servers);
+        const saved = await api.saveTool({ id: editingTool.id, name: pasteName.trim() || editingTool.name, server });
+        onSetupChanged();
+        const [result] = await api.testMcp({ [saved.id]: saved.server });
+        if (result) setTests((prev) => ({ ...prev, [saved.id]: result }));
+        closePaste();
+      } catch (err) {
+        setError(errorText(err));
+      }
+      return;
+    }
     try {
       const entries = Object.entries(parsed.servers);
       const added: McpTool[] = [];
@@ -198,6 +234,9 @@ export function EnvironmentDialog({
                       {result.ok ? result.detail : "Failed"}
                     </span>
                   )}
+                  <button className="link-btn" onClick={() => startEditTool(tool)} aria-label={`Edit ${tool.name}`}>
+                    Edit
+                  </button>
                   {!tool.builtIn && (
                     <button className="icon-btn small" aria-label={`Remove ${tool.name}`} title="Remove from your tools" onClick={() => removeTool(tool)}>
                       ×
@@ -237,10 +276,16 @@ export function EnvironmentDialog({
                 </ul>
               )}
               <div className="row-actions">
-                <button className="btn btn-small btn-primary" onClick={addTools} disabled={!parsed || parsed.described.length === 0}>
-                  Add {parsed && parsed.described.length > 1 ? `${parsed.described.length} tools` : "tool"}
+                <button
+                  className="btn btn-small btn-primary"
+                  onClick={addTools}
+                  disabled={!parsed || parsed.described.length === 0 || (Boolean(editingTool) && parsed.described.length > 1)}
+                >
+                  {editingTool
+                    ? `Save ${editingTool.name}`
+                    : `Add ${parsed && parsed.described.length > 1 ? `${parsed.described.length} tools` : "tool"}`}
                 </button>
-                <button className="btn btn-small btn-ghost" onClick={() => setAdding(false)}>
+                <button className="btn btn-small btn-ghost" onClick={closePaste}>
                   Cancel
                 </button>
               </div>

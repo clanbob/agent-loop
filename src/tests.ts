@@ -17,7 +17,7 @@ export function runTests(
   signal: AbortSignal,
 ): Promise<TestRun> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, { cwd, shell: true, windowsHide: true });
+    const child = spawn(command, { cwd, shell: true, windowsHide: true, detached: process.platform !== "win32" });
     let output = "";
     let timedOut = false;
     child.stdout.on("data", (d) => (output += d));

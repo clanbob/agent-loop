@@ -54,9 +54,9 @@ app.disableHardwareAcceleration();
 app.whenReady().then(async () => {
   const out = path.join(root, "build");
   const large = await render(1024);
-  fs.writeFileSync(path.join(out, "icon.png"), large.resize({ width: 512, height: 512, quality: "best" }).toPNG());
+  fs.writeFileSync(path.join(out, "icon.png"), large.toPNG());
   const pngs = ICO_SIZES.map((size) => ({ size, data: large.resize({ width: size, height: size, quality: "best" }).toPNG() }));
   fs.writeFileSync(path.join(out, "icon.ico"), ico(pngs));
-  console.log(`Icon written: build/icon.png (512) and build/icon.ico (${ICO_SIZES.join(", ")})`);
+  console.log(`Icon written: build/icon.png (1024) and build/icon.ico (${ICO_SIZES.join(", ")})`);
   app.quit();
 });

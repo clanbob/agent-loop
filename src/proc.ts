@@ -1,5 +1,5 @@
 import { spawn, execFileSync } from "node:child_process";
-import { createWriteStream, existsSync } from "node:fs";
+import { accessSync, constants, createWriteStream, existsSync } from "node:fs";
 import path from "node:path";
 
 export interface RunOptions {
@@ -23,6 +23,20 @@ export interface RunResult {
 
 const resolved = new Map<string, string>();
 
+export const IS_WINDOWS = process.platform === "win32";
+
+function resolveOnPosix(command: string): string {
+  for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
+    if (!dir) continue;
+    const candidate = path.join(dir, command);
+    try {
+      accessSync(candidate, constants.X_OK);
+      return candidate;
+    } catch {}
+  }
+  throw new Error(`Command not found on PATH: ${command}`);
+}
+
 export function resolveCommand(command: string): string {
   if (path.isAbsolute(command)) {
     if (!existsSync(command)) throw new Error(`Command not found: ${command}`);
@@ -30,6 +44,12 @@ export function resolveCommand(command: string): string {
   }
   const cached = resolved.get(command);
   if (cached) return cached;
+
+  if (!IS_WINDOWS) {
+    const found = resolveOnPosix(command);
+    resolved.set(command, found);
+    return found;
+  }
 
   let found: string[] = [];
   try {
@@ -54,14 +74,29 @@ function quoteForCmd(arg: string): string {
 
 export function killTree(pid: number | undefined): void {
   if (!pid) return;
+  if (IS_WINDOWS) {
+    try {
+      execFileSync("taskkill.exe", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });
+    } catch {}
+    return;
+  }
   try {
-    execFileSync("taskkill.exe", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });
-  } catch {}
+    process.kill(-pid, "SIGTERM");
+  } catch {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {}
+  }
+  setTimeout(() => {
+    try {
+      process.kill(-pid, "SIGKILL");
+    } catch {}
+  }, 3000).unref();
 }
 
 export function runProcess(opts: RunOptions): Promise<RunResult> {
   const exe = resolveCommand(opts.command);
-  const isScript = /\.(cmd|bat)$/i.test(exe);
+  const isScript = IS_WINDOWS && /\.(cmd|bat)$/i.test(exe);
 
   const child = isScript
     ? spawn("cmd.exe", ["/d", "/s", "/c", `"${[quoteForCmd(exe), ...opts.args.map(quoteForCmd)].join(" ")}"`], {
@@ -69,7 +104,7 @@ export function runProcess(opts: RunOptions): Promise<RunResult> {
         windowsVerbatimArguments: true,
         windowsHide: true,
       })
-    : spawn(exe, opts.args, { cwd: opts.cwd, windowsHide: true });
+    : spawn(exe, opts.args, { cwd: opts.cwd, windowsHide: true, detached: !IS_WINDOWS });
 
   const log = createWriteStream(opts.logFile, { flags: "a" });
   log.write(`$ ${exe} ${opts.args.join(" ")}\n(cwd ${opts.cwd})\n\n`);

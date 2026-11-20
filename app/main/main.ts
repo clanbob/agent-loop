@@ -1,5 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from "electron";
 import path from "node:path";
+import os from "node:os";
+import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { loadConfig } from "../../src/config.ts";
 import { checkTools } from "../../src/check.ts";
@@ -10,8 +12,34 @@ import { EnvironmentStore } from "./environments.ts";
 import { describeServer, normalizeServers, parseMcpText, testServers } from "../../src/mcp.ts";
 import { IPC, type AgentLoopApi, type ApiMethod, type AppEvent } from "../shared/api.ts";
 
+function useLoginShellPath(): void {
+  if (process.platform === "win32") return;
+  const home = os.homedir();
+  const known = ["/opt/homebrew/bin", "/usr/local/bin", path.join(home, ".local", "bin"), path.join(home, ".npm-global", "bin"), path.join(home, ".bun", "bin")];
+  let fromShell: string[] = [];
+  try {
+    const out = execFileSync(process.env.SHELL || "/bin/zsh", ["-ilc", 'printf "__PATH__%s__PATH__" "$PATH"'], {
+      encoding: "utf8",
+      timeout: 8000,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    fromShell = out.match(/__PATH__(.*)__PATH__/)?.[1].split(":") ?? [];
+  } catch {}
+  const parts = [...fromShell, ...(process.env.PATH ?? "").split(":"), ...known].filter(Boolean);
+  process.env.PATH = [...new Set(parts)].join(":");
+}
+
+useLoginShellPath();
+
 const root = app.getAppPath();
 const dataDir = app.isPackaged ? app.getPath("userData") : root;
+
+const windowLook =
+  process.platform === "darwin"
+    ? { vibrancy: "under-window" as const, visualEffectState: "active" as const, backgroundColor: "#00000000" }
+    : process.platform === "win32"
+      ? { backgroundMaterial: "acrylic" as const, backgroundColor: "#00000000", icon: path.join(root, "build", "icon.ico") }
+      : { backgroundColor: "#111114" };
 let window: BrowserWindow | null = null;
 let quitting = false;
 
@@ -94,9 +122,7 @@ function createWindow(): void {
     minWidth: 900,
     minHeight: 600,
     title: "Agent Loop",
-    backgroundColor: "#00000000",
-    backgroundMaterial: "acrylic",
-    icon: path.join(root, "build", "icon.ico"),
+    ...windowLook,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(root, "dist", "app", "preload.cjs"),

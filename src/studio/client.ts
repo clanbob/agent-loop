@@ -20,6 +20,11 @@ export class StudioClient {
   }
 
   static async connect(config: Config): Promise<StudioClient> {
+    if (!config.roblox.mcpCommand.trim()) {
+      throw new Error(
+        "The Roblox Studio MCP command is not set on this computer. Edit the Roblox Studio tool (in the Roblox Studio environment) and paste its command.",
+      );
+    }
     const transport = new StdioClientTransport({
       command: config.roblox.mcpCommand,
       args: config.roblox.mcpArgs,

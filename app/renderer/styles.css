@@ -25,7 +25,7 @@
   --hunk: #a7a7b0;
   --radius: 10px;
   --blur: blur(22px) saturate(140%);
-  --mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
+  --mono: "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", Menlo, ui-monospace, monospace;
   color-scheme: dark;
 }
 
@@ -43,7 +43,7 @@ body,
 body {
   background: transparent;
   color: var(--text);
-  font: 14px/1.5 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  font: 14px/1.5 "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -1436,4 +1436,20 @@ textarea.code {
     animation: none;
     transition: none;
   }
+}
+
+.link-btn {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  flex: none;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.link-btn:hover {
+  background: var(--glass-active);
+  color: var(--text);
 }

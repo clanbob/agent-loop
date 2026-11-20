@@ -11,7 +11,7 @@ export interface ToolCheck {
 
 function version(command: string): Promise<string> {
   const exe = resolveCommand(command);
-  const shell = /\.(cmd|bat)$/i.test(exe);
+  const shell = process.platform === "win32" && /\.(cmd|bat)$/i.test(exe);
   return new Promise((resolve, reject) => {
     execFile(
       shell ? "cmd.exe" : exe,

@@ -1,7 +1,10 @@
 {
   "agents": {
     "judge": {
-      "command": "%LOCALAPPDATA%\\agy\\bin\\agy.exe",
+      "command": {
+        "win32": "%LOCALAPPDATA%\\agy\\bin\\agy.exe",
+        "default": "agy"
+      },
       "model": "gemini-4-neon",
       "effort": "medium"
     },
@@ -18,12 +21,30 @@
   },
   "folder": {
     "guides": [],
-    "builderTools": ["Read", "Edit", "Write", "Grep", "Glob", "Bash", "PowerShell"],
+    "builderTools": [
+      "Read",
+      "Edit",
+      "Write",
+      "Grep",
+      "Glob",
+      "Bash",
+      "PowerShell"
+    ],
     "testTimeoutMinutes": 15
   },
   "roblox": {
-    "mcpCommand": "cmd.exe",
-    "mcpArgs": ["/d", "/c", "%LOCALAPPDATA%\\Roblox\\mcp.bat"],
+    "mcpCommand": {
+      "win32": "cmd.exe",
+      "default": ""
+    },
+    "mcpArgs": {
+      "win32": [
+        "/d",
+        "/c",
+        "%LOCALAPPDATA%\\Roblox\\mcp.bat"
+      ],
+      "default": []
+    },
     "placeId": 97262864777474,
     "exportServices": [
       "ServerScriptService",

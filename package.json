@@ -18,7 +18,8 @@
     "check": "node src/cli.ts check",
     "typecheck": "tsc --noEmit",
     "icon": "electron scripts/make-icon.cjs",
-    "dist": "node scripts/build-app.mjs && electron-builder --win"
+    "dist": "node scripts/build-app.mjs && electron-builder --win",
+    "dist:mac": "node scripts/build-app.mjs && electron-builder --mac"
   },
   "dependencies": {},
   "devDependencies": {
@@ -50,7 +51,7 @@
       "!dist/**/*.map",
       "prompts/**/*",
       "schemas/**/*",
-      "build/icon.ico",
+      "build/icon.*",
       "agentloop.config.json",
       "package.json"
     ],
@@ -86,6 +87,24 @@
     },
     "portable": {
       "artifactName": "Agent-Loop-${version}-portable.exe"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "category": "public.app-category.developer-tools",
+      "darkModeSupport": true,
+      "artifactName": "Agent-Loop-${version}-${arch}.${ext}"
+    },
+    "dmg": {
+      "title": "Agent Loop"
     }
   }
 }
