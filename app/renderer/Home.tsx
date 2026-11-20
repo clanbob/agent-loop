@@ -38,12 +38,11 @@ export function Home({ onNew }: { onNew: () => void }) {
         {tools && (
           <ul className="tool-list">
             {tools.map((t) => {
-              const optional = t.name === "Roblox Studio" && !t.ok;
               return (
                 <li key={t.name}>
-                  <span className={`dot ${t.ok ? "dot-clean" : optional ? "dot-stopped" : "dot-failed"}`} />
+                  <span className={`dot ${t.ok ? "dot-clean" : "dot-failed"}`} />
                   <strong>{t.name}</strong>
-                  <span className="muted">{optional ? `Not connected (only needed for Roblox runs)` : t.detail}</span>
+                  <span className="muted">{t.detail}</span>
                 </li>
               );
             })}

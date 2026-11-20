@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import type { RunState } from "../shared/api.ts";
 import { api } from "./api.ts";
+import { Segmented } from "./Segmented.tsx";
+
+const WHICH = [
+  ["total", "All changes so far"],
+  ["round", "This round only"],
+] as const;
 
 interface FileDiff {
   name: string;
@@ -60,14 +66,7 @@ export function ChangesTab({ id, state }: { id: string; state: RunState }) {
             ))}
           </select>
         </label>
-        <div className="segmented small">
-          <button className={which === "total" ? "on" : ""} onClick={() => setWhich("total")}>
-            All changes so far
-          </button>
-          <button className={which === "round" ? "on" : ""} onClick={() => setWhich("round")}>
-            This round only
-          </button>
-        </div>
+        <Segmented small label="Which changes" options={WHICH} value={which} onChange={setWhich} />
       </div>
       {text === null && <p className="muted">Loading…</p>}
       {text !== null && files.length === 0 && <p className="muted">No changes in this view.</p>}

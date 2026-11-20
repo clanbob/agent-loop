@@ -2,8 +2,9 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import type { Config } from "../../src/config.ts";
 import { AgentLoop, listRuns, newRunId, type LimitPause, type PauseRequest, type RunState } from "../../src/loop.ts";
-import { folderSpec, robloxSpec } from "../../src/workspace/index.ts";
+import { folderSpec, robloxSpec, toolsSpec } from "../../src/workspace/index.ts";
 import { git } from "../../src/git.ts";
+import type { EnvironmentStore } from "./environments.ts";
 import type {
   ActionResult,
   AppEvent,
@@ -43,10 +44,12 @@ export class RunManager {
   private send: (event: AppEvent) => void;
   private tracked = new Map<string, Tracked>();
   private flushTimer: NodeJS.Timeout | null = null;
+  private environments: EnvironmentStore;
 
-  constructor(config: Config, send: (event: AppEvent) => void) {
+  constructor(config: Config, send: (event: AppEvent) => void, environments: EnvironmentStore) {
     this.config = config;
     this.send = send;
+    this.environments = environments;
   }
 
   private runDir(id: string): string {
@@ -139,15 +142,24 @@ export class RunManager {
     if (!task) throw new Error("Write the task first.");
     const scope = request.scope.map((s) => s.trim()).filter(Boolean);
     const guides = request.guides.map((g) => g.trim()).filter(Boolean);
-    if (request.target === "roblox" && this.liveRobloxRun()) {
+    const { env, studio, servers, all } = this.environments.resolve(request.environmentId);
+    const project = request.project.trim();
+    const kind = project ? "folder" : studio ? "roblox" : "tools";
+    if (kind === "roblox" && this.liveRobloxRun()) {
       throw new Error("A Roblox Studio run is already going. Only one can edit the place at a time.");
+    }
+    if (kind === "tools" && Object.keys(servers).length === 0) {
+      throw new Error(`Choose a project folder, or add MCP tools to the "${env.name}" environment.`);
     }
     const id = newRunId();
     if (this.tracked.has(id) || existsSync(this.runDir(id))) throw new Error("Wait a second before starting another run.");
+    const envSpec = (s: typeof servers) => ({ name: env.name, servers: s, notes: env.notes });
     const spec =
-      request.target === "folder"
-        ? folderSpec(this.config, id, request.project, scope, guides, request.test.trim() || null)
-        : robloxSpec(this.config, scope, guides);
+      kind === "folder"
+        ? folderSpec(this.config, id, project, scope, guides, request.test.trim() || null, Object.keys(all).length > 0 ? envSpec(all) : null)
+        : kind === "roblox"
+          ? robloxSpec(this.config, scope, guides, studio, Object.keys(servers).length > 0 ? envSpec(servers) : null)
+          : toolsSpec(this.config, id, scope, guides, envSpec(servers));
     const loop = AgentLoop.start(this.config, id, task, spec, this.hooks(id), request.agents ?? null);
     this.attach(loop);
     return { id };

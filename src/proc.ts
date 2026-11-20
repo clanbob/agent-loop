@@ -33,7 +33,7 @@ export function resolveCommand(command: string): string {
 
   let found: string[] = [];
   try {
-    found = execFileSync("where.exe", [command], { encoding: "utf8" }).split(/\r?\n/).filter(Boolean);
+    found = execFileSync("where.exe", [command], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).split(/\r?\n/).filter(Boolean);
   } catch {
     throw new Error(`Command not found on PATH: ${command}`);
   }

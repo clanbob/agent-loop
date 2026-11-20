@@ -69,7 +69,7 @@ export function App() {
 
 function RunItem({ run, selected, onSelect }: { run: RunListItem; selected: boolean; onSelect: (id: string) => void }) {
   const status = run.paused ? "paused" : run.status;
-  const details = `${run.title}\n${run.kind === "roblox" ? "Roblox" : "Project"} · ${run.paused ? "Paused" : STATUS_LABEL[run.status]}${run.round > 0 ? ` · round ${run.round}` : ""} · ${runDate(run.id)}`;
+  const details = `${run.title}\n${run.kind === "roblox" ? "Roblox" : run.kind === "tools" ? "MCP tools" : "Project"} · ${run.paused ? "Paused" : STATUS_LABEL[run.status]}${run.round > 0 ? ` · round ${run.round}` : ""} · ${runDate(run.id)}`;
   return (
     <button className={`run-item ${selected ? "selected" : ""}`} onClick={() => onSelect(run.id)} title={details}>
       <span className={`dot dot-${status}`} />

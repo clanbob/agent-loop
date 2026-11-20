@@ -10,10 +10,7 @@ Where the code is:
 
 {{guides}}
 
-All changes made so far in this task (a git diff against the code before the task started):
-```diff
-{{diff}}
-```
+{{changes}}
 
 {{tests}}
 

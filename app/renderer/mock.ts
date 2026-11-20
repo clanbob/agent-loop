@@ -1,5 +1,6 @@
 import type {
   AgentLoopApi,
+  Setup,
   AppEvent,
   Finding,
   LogLine,
@@ -202,6 +203,19 @@ index 3f2a1b0..9c4d2e1 100644
  });
 `;
 
+const mockSetup: Setup = {
+  tools: [
+    { id: "roblox-studio", name: "Roblox Studio", server: { command: "cmd.exe", args: ["/d", "/c", "mcp.bat"] }, builtIn: "roblox-studio" },
+    { id: "supabase-1", name: "Supabase", server: { command: "cmd", args: ["/c", "npx", "-y", "@supabase/mcp-server-supabase@latest"] } },
+    { id: "playwright-1", name: "Playwright", server: { command: "cmd", args: ["/c", "npx", "@playwright/mcp@latest"] } },
+  ],
+  environments: [
+    { id: "project-folder", name: "Project folder", toolIds: [], projectPath: "", notes: "", builtIn: "project" },
+    { id: "roblox-studio", name: "Roblox Studio", toolIds: ["roblox-studio"], projectPath: "", notes: "", builtIn: "roblox" },
+    { id: "web-app", name: "Shop web app", toolIds: ["supabase-1", "playwright-1"], projectPath: "C:\\Users\\andre\\projects\\shop-api", notes: "" },
+  ],
+};
+
 export function createMockApi(): AgentLoopApi {
   const listeners = new Set<(e: AppEvent) => void>();
   const item = (d: RunDetail): RunListItem => ({
@@ -216,7 +230,10 @@ export function createMockApi(): AgentLoopApi {
     startedAt: d.state.startedAt,
   });
   return {
-    info: async () => ({ judgeModel: "gemini-4-neon-medium", robloxGuides: ["C:\\Users\\andre\\.claude\\ARCHITECTURE.md", "C:\\Users\\andre\\.claude\\CODE_STYLE.md"], folderGuides: [] }),
+    info: async () => ({
+      judgeModel: "gemini-4-neon",
+      guides: ["C:\\Users\\andre\\.claude\\CLAUDE.md", "C:\\Users\\andre\\.claude\\ARCHITECTURE.md", "C:\\Users\\andre\\.claude\\CODE_STYLE.md"],
+    }),
     listRuns: async () => Object.values(details).map(item).sort((a, b) => b.id.localeCompare(a.id)),
     getRun: async (id) => details[id] ?? null,
     startRun: async () => {
@@ -237,39 +254,72 @@ export function createMockApi(): AgentLoopApi {
       { name: "Antigravity (judge)", ok: true, detail: "1.5.13" },
       { name: "Claude (builder)", ok: true, detail: "2.1.329 (Claude Code)" },
       { name: "Codex (reviewer)", ok: true, detail: "codex-cli 0.171.0" },
-      { name: "Roblox Studio", ok: false, detail: "No Roblox Studio is connected." },
     ],
     listModels: async () => ({
       judge: {
         models: [
-          { id: "gemini-4-neon-medium", label: "Gemini 4 Neon (Medium)" },
-          { id: "gemini-4-neon-high", label: "Gemini 4 Neon (High)" },
-          { id: "gemini-3.8-flash-low", label: "Gemini 3.8 Flash (Low)" },
+          { id: "gemini-4-neon", label: "Gemini 4 Neon", efforts: ["low", "medium", "high", "xhigh"] },
+          { id: "gemini-4-argon", label: "Gemini 4 Argon", efforts: ["low", "medium", "high"] },
+          { id: "gemini-3.8-flash", label: "Gemini 3.8 Flash", efforts: ["low", "medium", "high"] },
+          { id: "gemini-pro-orchestrator-neon", label: "Orchestrator (Neon)", efforts: [] },
         ],
-        efforts: ["low", "medium", "high", "xhigh", "max"],
-        defaultModel: "gemini-4-neon-medium",
-        defaultEffort: null,
+        defaultModel: "gemini-4-neon",
+        defaultEffort: "medium",
       },
       builder: {
         models: [
-          { id: "fable", label: "Fable (latest)" },
-          { id: "opus", label: "Opus (latest)" },
-          { id: "sonnet", label: "Sonnet (latest)" },
+          { id: "opus", label: "Opus", efforts: ["low", "medium", "high", "xhigh", "max"] },
+          { id: "fable", label: "Fable", efforts: ["low", "medium", "high", "xhigh", "max"] },
+          { id: "sonnet", label: "Sonnet", efforts: ["low", "medium", "high", "xhigh", "max"] },
         ],
-        efforts: ["low", "medium", "high", "xhigh", "max"],
-        defaultModel: null,
-        defaultEffort: null,
+        defaultModel: "opus",
+        defaultEffort: "medium",
       },
       reviewer: {
         models: [
-          { id: "gpt-6.2-sol", label: "GPT-6.2-Sol" },
-          { id: "gpt-6.2-astra", label: "GPT-6.2-Astra" },
+          { id: "gpt-6.2-sol", label: "GPT-6.2 Sol", efforts: ["low", "medium", "high", "xhigh", "max", "ultra"] },
+          { id: "gpt-6.2-astra", label: "GPT-6.2 Astra", efforts: ["low", "medium", "high", "xhigh", "max", "ultra"] },
+          { id: "gpt-6-luna", label: "GPT-6 Luna", efforts: ["low", "medium", "high", "xhigh", "max"] },
         ],
-        efforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
         defaultModel: "gpt-6.2-astra",
-        defaultEffort: "max",
+        defaultEffort: "medium",
       },
     }),
+    getSetup: async () => ({ tools: [...mockSetup.tools], environments: [...mockSetup.environments] }),
+    saveTool: async (input) => {
+      const tool = { id: input.id ?? `tool-${mockSetup.tools.length + 1}`, name: input.name, server: input.server };
+      mockSetup.tools = [...mockSetup.tools.filter((t) => t.id !== tool.id), tool];
+      return tool;
+    },
+    deleteTool: async (id) => {
+      mockSetup.tools = mockSetup.tools.filter((t) => t.id !== id);
+      mockSetup.environments = mockSetup.environments.map((e) => ({ ...e, toolIds: e.toolIds.filter((t) => t !== id) }));
+    },
+    saveEnvironment: async (input) => {
+      const env = { id: input.id ?? `env-${mockSetup.environments.length + 1}`, name: input.name, toolIds: input.toolIds, projectPath: input.projectPath, notes: input.notes };
+      const i = mockSetup.environments.findIndex((e) => e.id === env.id);
+      if (i >= 0) mockSetup.environments[i] = { ...mockSetup.environments[i], ...env };
+      else mockSetup.environments.push(env);
+      return env;
+    },
+    deleteEnvironment: async (id) => {
+      mockSetup.environments = mockSetup.environments.filter((e) => e.id !== id);
+    },
+    parseMcp: async (text, name) => {
+      try {
+        const data = JSON.parse(text);
+        const map = data.mcpServers ?? data.servers ?? (data.command || data.url ? { [name || "server"]: data } : data);
+        return {
+          servers: map,
+          problems: [],
+          described: Object.entries(map).map(([n, s]) => ({ name: n, summary: (s as { url?: string; command?: string; args?: string[] }).url ?? [(s as { command: string }).command, ...((s as { args?: string[] }).args ?? [])].join(" ") })),
+        };
+      } catch {
+        return text.trim() ? { servers: { [name || "server"]: { command: text.trim().split(" ")[0], args: text.trim().split(" ").slice(1) } }, problems: [], described: [{ name: name || "server", summary: text.trim() }] } : { servers: {}, problems: [], described: [] };
+      }
+    },
+    testMcp: async (servers) =>
+      Object.keys(servers).map((name, i) => (i === 0 ? { name, ok: true, tools: ["query", "list_tables"], detail: "12 tools" } : { name, ok: false, tools: [], detail: "The server stopped right away. Check the command is installed and correct, and that any keys it needs are set." })),
     onEvent: (l) => {
       listeners.add(l);
       return () => listeners.delete(l);

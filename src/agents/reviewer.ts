@@ -1,11 +1,12 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { runProcess } from "../proc.ts";
+import { codexMcpArgs, type McpServers } from "../mcp.ts";
 import { AgentError, extractJson, failure, type Review, type StepContext } from "./types.ts";
 
 const AGENT = "Codex (reviewer)";
 
-export async function runReviewer(ctx: StepContext, prompt: string): Promise<Review> {
+export async function runReviewer(ctx: StepContext, prompt: string, servers: McpServers = {}): Promise<Review> {
   const { config, roundDir, workDir } = ctx;
   const logFile = path.join(roundDir, "review.log");
   const outFile = path.join(roundDir, "review-raw.json");
@@ -27,6 +28,7 @@ export async function runReviewer(ctx: StepContext, prompt: string): Promise<Rev
     "-C",
     workDir,
   ];
+  args.push(...codexMcpArgs(servers));
   if (config.agents.reviewer.model) args.push("-m", config.agents.reviewer.model);
   if (config.agents.reviewer.effort) args.push("-c", `model_reasoning_effort=${config.agents.reviewer.effort}`);
   args.push("-");

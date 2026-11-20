@@ -2,16 +2,18 @@
   "agents": {
     "judge": {
       "command": "%LOCALAPPDATA%\\agy\\bin\\agy.exe",
-      "model": "gemini-4-neon-medium",
-      "effort": null
+      "model": "gemini-4-neon",
+      "effort": "medium"
     },
     "builder": {
       "command": "claude",
-      "model": null
+      "model": "opus",
+      "effort": "medium"
     },
     "reviewer": {
       "command": "codex",
-      "model": null
+      "model": "gpt-6.2-astra",
+      "effort": "medium"
     }
   },
   "folder": {
@@ -32,10 +34,7 @@
       "ServerStorage",
       "Workspace"
     ],
-    "guides": [
-      "%USERPROFILE%\\.claude\\ARCHITECTURE.md",
-      "%USERPROFILE%\\.claude\\CODE_STYLE.md"
-    ]
+    "guides": []
   },
   "deleteRunFolder": "onClean",
   "limits": {

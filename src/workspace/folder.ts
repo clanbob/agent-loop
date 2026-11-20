@@ -1,8 +1,9 @@
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import type { Config } from "../config.ts";
+import { discoverGuides, mergeGuides } from "../guides.ts";
 import { git, commitAll, head, diff, changedFiles } from "../git.ts";
-import { scopeFilter, scopeList, type Workspace, type WorkspaceSpec } from "./types.ts";
+import { mcpToolNames, scopeFilter, scopeList, toolsNote, type EnvironmentSpec, type Workspace, type WorkspaceSpec } from "./types.ts";
 
 type FolderSpec = Extract<WorkspaceSpec, { kind: "folder" }>;
 
@@ -13,6 +14,7 @@ export function folderSpec(
   scope: string[],
   guides: string[],
   testCommand: string | null,
+  environment: EnvironmentSpec | null = null,
 ): FolderSpec {
   const resolved = path.resolve(project);
   if (!existsSync(resolved)) throw new Error(`Project folder not found: ${resolved}`);
@@ -31,24 +33,28 @@ export function folderSpec(
     kind: "folder",
     project: path.resolve(top),
     scope: scope.map((s) => s.replace(/\\/g, "/").replace(/^\.\//, "")),
-    guides: [...config.folder.guides, ...guides].map((g) => path.resolve(g)),
+    guides: mergeGuides(discoverGuides(), config.folder.guides, guides).map((g) => path.resolve(g)),
     testCommand,
     branch: `agentloop/${runId}`,
     worktree: path.join(config.dataDir, "worktrees", runId),
+    environment,
   };
 }
 
 export function createFolderWorkspace(config: Config, spec: FolderSpec): Workspace {
   const scope = scopeList(spec.scope, "Anywhere in the project.");
   const where = `The project is ${spec.project}. This task works in a separate git worktree of it at ${spec.worktree}, on the branch ${spec.branch}.`;
+  const servers = spec.environment?.servers ?? {};
 
   return {
     spec,
-    label: `${spec.project} (branch ${spec.branch})`,
+    label: `${spec.environment ? `${spec.environment.name}: ` : ""}${spec.project} (branch ${spec.branch})`,
     workDir: spec.worktree,
+    tracksChanges: true,
+    reviewerServers: {},
     builder: {
-      mcpServers: {},
-      allowedTools: config.folder.builderTools,
+      mcpServers: servers,
+      allowedTools: [...config.folder.builderTools, ...mcpToolNames(servers)],
       disallowedTools: [],
       addDirs: [],
     },
@@ -56,16 +62,16 @@ export function createFolderWorkspace(config: Config, spec: FolderSpec): Workspa
       judge: `${where}
 Read the code there to understand the project and find what the builder should reuse; mention files by their path in the project.
 Changes are allowed in:
-${scope}`,
+${scope}${toolsNote(spec.environment, "others")}`,
       builder: `${where}
 Your working directory is that worktree. Make every change there, and only under:
 ${scope}
 If the task truly needs a change elsewhere, do not make it: say so in your final report instead.
 Do not commit, switch branches or touch other worktrees; the loop commits your work after each round.
-You may run the project's build and tests to check your work.`,
+You may run the project's build and tests to check your work.${toolsNote(spec.environment, "builder")}`,
       reviewer: `Your working folder is the project's code on the task's branch. Read any file you need, especially existing code the change uses, to check it is used correctly.
 Changes were only allowed in:
-${scope}`,
+${scope}${toolsNote(spec.environment, "others")}`,
     },
 
     async prepare() {

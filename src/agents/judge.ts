@@ -1,6 +1,7 @@
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { runProcess } from "../proc.ts";
+import { judgeModelId } from "../models.ts";
 import { AgentError, extractJson, failure, type Finding, type StepContext } from "./types.ts";
 
 const AGENT = "Antigravity (judge)";
@@ -100,8 +101,7 @@ async function runOnce<T>(
     workDir,
     ...[...new Set(ctx.guides.map((g) => path.dirname(g)))].flatMap((dir) => ["--add-dir", dir]),
   ];
-  if (config.agents.judge.model) args.push("--model", config.agents.judge.model);
-  if (config.agents.judge.effort) args.push("--effort", config.agents.judge.effort);
+  if (config.agents.judge.model) args.push("--model", judgeModelId(config.agents.judge.model, config.agents.judge.effort));
 
   const result = await runProcess({
     command: config.agents.judge.command,

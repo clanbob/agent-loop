@@ -21,6 +21,13 @@ const methods: ApiMethod[] = [
   "pickFiles",
   "checkTools",
   "listModels",
+  "getSetup",
+  "saveTool",
+  "deleteTool",
+  "saveEnvironment",
+  "deleteEnvironment",
+  "parseMcp",
+  "testMcp",
 ];
 
 const api = Object.fromEntries(methods.map((m) => [m, call(m)])) as unknown as Omit<AgentLoopApi, "onEvent">;

@@ -6,8 +6,16 @@ import { RoundsTab } from "./RoundsTab.tsx";
 import { OutputTab } from "./OutputTab.tsx";
 import { ChangesTab } from "./ChangesTab.tsx";
 import { skippedFindings } from "./findings.ts";
+import { Segmented } from "./Segmented.tsx";
 
-type Tab = "rounds" | "output" | "changes" | "task";
+const TABS = [
+  ["rounds", "Rounds"],
+  ["output", "Live output"],
+  ["changes", "Changes"],
+  ["task", "Task"],
+] as const;
+
+type Tab = (typeof TABS)[number][0];
 
 function useNow(active: boolean): number {
   const [now, setNow] = useState(Date.now());
@@ -86,7 +94,13 @@ export function RunView({ id, onDeleted }: { id: string; onDeleted: () => void }
     }
   };
 
-  const target = state.workspace.kind === "folder" ? basename(state.workspace.project) : "Roblox Studio";
+  const target =
+    state.workspace.kind === "folder"
+      ? basename(state.workspace.project)
+      : state.workspace.kind === "tools"
+        ? `${state.workspace.environment.name} (MCP tools)`
+        : "Roblox Studio";
+  const envTools = Object.keys(state.workspace.environment?.servers ?? {});
 
   return (
     <div className="run">
@@ -182,20 +196,9 @@ export function RunView({ id, onDeleted }: { id: string; onDeleted: () => void }
 
       {!live && <Outcome detail={detail} busy={busy} onAction={(a) => act(() => api.finishAction(id, a))} />}
 
-      <nav className="tabs" role="tablist">
-        {(
-          [
-            ["rounds", "Rounds"],
-            ["output", "Live output"],
-            ["changes", "Changes"],
-            ["task", "Task"],
-          ] as const
-        ).map(([key, label]) => (
-          <button key={key} role="tab" aria-selected={tab === key} className={tab === key ? "on" : ""} onClick={() => setTab(key)}>
-            {label}
-          </button>
-        ))}
-      </nav>
+      <div className="tabs-row">
+        <Segmented variant="tabs" label="Run sections" options={TABS} value={tab} onChange={setTab} />
+      </div>
 
       <section className="tab-body">
         {tab === "rounds" && <RoundsTab state={state} steps={steps} live={live} now={now} />}
@@ -223,6 +226,13 @@ export function RunView({ id, onDeleted }: { id: string; onDeleted: () => void }
                 <dt>Tests</dt>
                 <dd>{state.workspace.testCommand ?? "None"}</dd>
               </dl>
+            ) : state.workspace.kind === "tools" ? (
+              <dl className="kv">
+                <dt>Works in</dt>
+                <dd>Live, through MCP tools only</dd>
+                <dt>Focus</dt>
+                <dd>{state.workspace.scope.join(", ") || "Not set"}</dd>
+              </dl>
             ) : (
               <dl className="kv">
                 <dt>Target</dt>
@@ -230,6 +240,17 @@ export function RunView({ id, onDeleted }: { id: string; onDeleted: () => void }
                 <dt>Scope</dt>
                 <dd>{state.workspace.scope.join(", ")}</dd>
               </dl>
+            )}
+            {state.workspace.environment && (
+              <>
+                <h3>Environment</h3>
+                <dl className="kv">
+                  <dt>Name</dt>
+                  <dd>{state.workspace.environment.name}</dd>
+                  <dt>MCP tools</dt>
+                  <dd>{envTools.join(", ") || "None"}</dd>
+                </dl>
+              </>
             )}
             <h3>Models</h3>
             <dl className="kv">

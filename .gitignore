@@ -4,3 +4,5 @@ mirror/
 worktrees/
 dist/
 release/
+environments.json
+workspaces/

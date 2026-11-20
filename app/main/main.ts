@@ -4,7 +4,10 @@ import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { loadConfig } from "../../src/config.ts";
 import { checkTools } from "../../src/check.ts";
 import { modelCatalog } from "../../src/models.ts";
+import { discoverGuides, mergeGuides } from "../../src/guides.ts";
 import { RunManager } from "./runs.ts";
+import { EnvironmentStore } from "./environments.ts";
+import { describeServer, normalizeServers, parseMcpText, testServers } from "../../src/mcp.ts";
 import { IPC, type AgentLoopApi, type ApiMethod, type AppEvent } from "../shared/api.ts";
 
 const root = app.getAppPath();
@@ -27,7 +30,8 @@ function configFile(): string {
 }
 
 const config = loadConfig(root, configFile(), dataDir);
-const runs = new RunManager(config, send);
+const environments = new EnvironmentStore(dataDir, config);
+const runs = new RunManager(config, send, environments);
 runs.sweepFinishedFolders();
 
 type Handlers = { [K in ApiMethod]: (...args: Parameters<AgentLoopApi[K]>) => unknown };
@@ -35,8 +39,7 @@ type Handlers = { [K in ApiMethod]: (...args: Parameters<AgentLoopApi[K]>) => un
 const handlers: Handlers = {
   info: () => ({
     judgeModel: config.agents.judge.model,
-    robloxGuides: config.roblox.guides,
-    folderGuides: config.folder.guides,
+    guides: mergeGuides(discoverGuides(), config.folder.guides, config.roblox.guides),
   }),
   listRuns: () => runs.list(),
   getRun: (id) => runs.get(id),
@@ -58,8 +61,23 @@ const handlers: Handlers = {
     });
     return result.canceled ? [] : result.filePaths;
   },
-  checkTools: () => checkTools(config),
+  checkTools: () => checkTools(config, false),
   listModels: (refresh) => modelCatalog(config, Boolean(refresh)),
+  getSetup: () => environments.setup(),
+  saveTool: (input) => environments.saveTool(input),
+  deleteTool: (id) => environments.deleteTool(id),
+  saveEnvironment: (input) => environments.saveEnvironment(input),
+  deleteEnvironment: (id) => environments.deleteEnvironment(id),
+  parseMcp: (text, name) => {
+    const parsed = parseMcpText(text, name || "server");
+    const servers = normalizeServers(parsed.servers);
+    return {
+      servers,
+      problems: parsed.problems,
+      described: Object.entries(servers).map(([n, s]) => ({ name: n, summary: describeServer(s) })),
+    };
+  },
+  testMcp: (servers) => testServers(servers),
 };
 
 ipcMain.handle(IPC.invoke, async (_event, method: ApiMethod, args: unknown[]) => {

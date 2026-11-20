@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { LogLine } from "../shared/api.ts";
 import { AGENT_LABEL } from "./format.ts";
+import { Segmented } from "./Segmented.tsx";
 
 const FILTERS = [
   ["all", "All"],
@@ -33,13 +34,7 @@ export function OutputTab({ logs, live }: { logs: LogLine[]; live: boolean }) {
   return (
     <div className="output">
       <div className="output-bar">
-        <div className="segmented small">
-          {FILTERS.map(([key, label]) => (
-            <button key={key} className={filter === key ? "on" : ""} onClick={() => setFilter(key)}>
-              {label}
-            </button>
-          ))}
-        </div>
+        <Segmented small label="Show output from" options={FILTERS} value={filter} onChange={setFilter} />
         {!follow && (
           <button className="btn btn-small" onClick={() => setFollow(true)}>
             Jump to latest

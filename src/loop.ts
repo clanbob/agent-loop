@@ -532,7 +532,7 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
           `Round ${round}: ${roundFiles.length} file(s) changed this round, ${cumulativeFiles.length} in total`,
         );
 
-        if (cumulativeFiles.length === 0) {
+        if (workspace.tracksChanges && cumulativeFiles.length === 0) {
           const go = await this.hooks.confirmContinue({
             reason: "Claude finished but nothing has changed.",
             details: [(state.currentBuild?.summary ?? "").slice(0, 1500)],
@@ -540,7 +540,7 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
           if (!go) throw new RunStopped("builder made no changes");
         }
 
-        const strays = workspace.outOfScope(roundFiles);
+        const strays = workspace.tracksChanges ? workspace.outOfScope(roundFiles) : [];
         if (strays.length > 0) {
           const go = await this.hooks.confirmContinue({
             reason: "Claude changed files outside the allowed scope.",
@@ -593,13 +593,15 @@ export class AgentLoop extends EventEmitter<LoopEvents> {
           task: state.task,
           workspace: workspace.notes.reviewer,
           guides,
-          diff: readFileSync(snap.diffFile, "utf8"),
+          changes: workspace.tracksChanges
+            ? `All changes made so far in this task (a git diff against the code before the task started):\n\`\`\`diff\n${readFileSync(snap.diffFile, "utf8")}\n\`\`\``
+            : `There is no diff for this run: the work was done live through MCP tools. What the builder reported doing this round:\n<builder_report>\n${state.currentBuild?.summary ?? ""}\n</builder_report>\nCheck the real current state through the tools.`,
           tests: testsBlock,
           previous: previousBlock,
           dismissed: dismissedBlock,
         });
         const review = await this.withLimitPause(round, () =>
-          runReviewer(this.context(this.roundDir(round), "codex"), prompt),
+          runReviewer(this.context(this.roundDir(round), "codex"), prompt, workspace.reviewerServers),
         );
 
         const record: RoundRecord = {
