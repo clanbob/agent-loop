@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, RefreshCw } from "lucide-react";
+import { ArrowUpRight, Plus, RefreshCw } from "lucide-react";
 import type { ToolStatus } from "../shared/api.ts";
 import { DEFAULT_CHOICES, PROVIDER_NAMES, ROLES } from "../../src/roles.ts";
 import { api } from "./api.ts";
@@ -9,6 +9,12 @@ const ROLE_COPY = {
   builder: { name: "Builder", job: "Carries out the plan and every finding marked Fix" },
   reviewer: { name: "Reviewer", job: "Inspects the changes and reports findings" },
 } as const;
+
+const INSTALL_URLS: Record<string, string> = {
+  Antigravity: "https://antigravity.google/download",
+  Claude: "https://code.claude.com/docs/en/quickstart",
+  Codex: "https://developers.openai.com/codex/cli",
+};
 
 export function Home({ onNew }: { onNew: () => void }) {
   const [tools, setTools] = useState<ToolStatus[] | null>(null);
@@ -60,13 +66,23 @@ export function Home({ onNew }: { onNew: () => void }) {
         {!tools && <p className="muted">Checking installed tools</p>}
         {tools && (
           <ul className="tool-list">
-            {tools.map((t) => (
-              <li key={t.name}>
-                <span className={`dot ${t.ok ? "dot-clean" : "dot-failed"}`} />
-                <span className="tool-list-name">{t.name}</span>
-                <span className={t.ok ? "tool-list-detail" : "tool-list-detail error-text"}>{t.detail}</span>
-              </li>
-            ))}
+            {tools.map((t) => {
+              const installUrl = !t.ok ? INSTALL_URLS[t.name] : undefined;
+              return (
+                <li key={t.name}>
+                  <span className={`dot ${t.ok ? "dot-clean" : "dot-failed"}`} />
+                  <span className="tool-list-name">{t.name}</span>
+                  <span className="tool-list-detail">{t.detail}</span>
+                  {installUrl && (
+                    <a className="btn btn-small tool-install" href={installUrl} target="_blank" rel="noopener noreferrer"
+                      aria-label={`Install ${t.name}`}>
+                      Install
+                      <ArrowUpRight />
+                    </a>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
