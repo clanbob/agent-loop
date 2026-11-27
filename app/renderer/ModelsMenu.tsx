@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ChevronDown, RefreshCw } from "lucide-react";
 import { DEFAULT_CHOICES, PROVIDERS, PROVIDER_NAMES, ROLES, type AgentChoices, type Provider, type Role } from "../../src/roles.ts";
 import type { AgentModels, ModelCatalog } from "../shared/api.ts";
 import { api } from "./api.ts";
@@ -72,8 +73,8 @@ export function ModelsMenu({ scopeLabel, choices, onChange }: {
     const choice = choices[role];
     const provider = choice.provider ?? DEFAULT_CHOICES[role].provider;
     const label = catalog?.[provider].models.find((m) => m.id === choice.model)?.label ?? choice.model;
-    return `${ROLE_LABEL[role]}: ${label || "Provider default"}`;
-  }).join("   |   ");
+    return { role, label: label || "Provider default" };
+  });
 
   const shown = PROVIDERS.filter((p) => ROLES.some((role) => (choices[role].provider ?? DEFAULT_CHOICES[role].provider) === p));
   const suggestions = shown.filter((p) => catalog?.[p].source === "suggestions").map((p) => PROVIDER_LABEL[p]);
@@ -83,10 +84,18 @@ export function ModelsMenu({ scopeLabel, choices, onChange }: {
     <div className={`models ${open ? "open" : ""}`}>
       <button className="models-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
         <span className="models-title">Models</span>
-        <span className="models-summary">{summary}</span>
-        <span className="chevron" aria-hidden>▾</span>
+        <span className="models-summary">
+          {summary.map(({ role, label }) => (
+            <span key={role} className="models-pick">
+              <span className={`role-key role-${role}`} />
+              <span className="muted">{ROLE_LABEL[role]}</span>
+              {label}
+            </span>
+          ))}
+        </span>
+        <ChevronDown className="chevron" />
       </button>
-      <div className="models-collapse" inert={!open}>
+      {open && (
         <div className="models-body">
           <div className="models-grid">
             <span />
@@ -101,7 +110,10 @@ export function ModelsMenu({ scopeLabel, choices, onChange }: {
               const efforts = info?.models.find((m) => m.id === choice.model)?.efforts ?? [];
               return (
                 <div key={role} className="models-row">
-                  <strong>{name}</strong>
+                  <span className="models-role">
+                    <span className={`role-key role-${role}`} />
+                    {name}
+                  </span>
                   <select aria-label={`${name} provider`} value={provider} disabled={!catalog} onChange={(e) => {
                     const next = e.target.value as Provider;
                     selectModel(role, next, catalog?.[next].defaultModel ?? "");
@@ -128,12 +140,13 @@ export function ModelsMenu({ scopeLabel, choices, onChange }: {
             <span className="models-actions">
               <button className="btn btn-small" onClick={() => onChange(DEFAULT_CHOICES)}>Reset</button>
               <button className="btn btn-small btn-ghost" onClick={() => load(true)} disabled={loading}>
-                {loading ? "Refreshing…" : "Refresh lists"}
+                <RefreshCw className={loading ? "spin" : undefined} />
+                {loading ? "Refreshing" : "Refresh lists"}
               </button>
             </span>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

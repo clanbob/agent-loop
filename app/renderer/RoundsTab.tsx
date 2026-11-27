@@ -1,5 +1,6 @@
+import { ChevronRight } from "lucide-react";
 import type { Decision, RoundRecord, RunState } from "../shared/api.ts";
-import { PHASE_AGENT, duration, phaseLabel, type TimedStep } from "./format.ts";
+import { PHASE_AGENT, SEVERITY_LABEL, duration, phaseLabel, type TimedStep } from "./format.ts";
 import { decisionFor } from "./findings.ts";
 
 interface ReviewControls {
@@ -7,6 +8,13 @@ interface ReviewControls {
   busy: boolean;
   choose: (id: string, verdict: Decision["verdict"]) => void;
   submit: () => void;
+}
+
+const WAITING = new Set(["paused", "manual-review"]);
+
+function stepKind(step: TimedStep): string {
+  if (WAITING.has(step.phase)) return "wait";
+  return PHASE_AGENT[step.phase] ?? "loop";
 }
 
 export function RoundsTab({ state, steps, live, now, review }: {
@@ -46,7 +54,11 @@ function RoundCard({
   live: boolean;
   now: number;
 }) {
-  const total = steps.reduce((sum, s) => sum + ((s.end ?? (live ? now : s.start)) - s.start), 0);
+  const timed = steps.map((s) => {
+    const open = s.end === null && live;
+    return { step: s, open, ms: Math.max((s.end ?? (open ? now : s.start)) - s.start, 0) };
+  });
+  const total = timed.reduce((sum, t) => sum + t.ms, 0);
   const fixes = record?.decisions?.filter((d) => d.verdict === "fix").length ?? null;
 
   const draft = new Map(record?.reviewDraft?.map((d) => [d.id, d.verdict]));
@@ -68,23 +80,35 @@ function RoundCard({
               Tests {record.testExitCode === 0 ? "passed" : "failed"}
             </span>
           )}
-          {total > 0 && <span className="muted">{duration(total)}</span>}
+          {total > 0 && <span className="mono">{duration(total)}</span>}
         </div>
       </div>
 
-      {steps.length > 0 && (
+      {total > 0 && (
+        <div className="strip" role="img" aria-label={`Time spent in ${round === 0 ? "setup" : `round ${round}`}, by step`}>
+          {timed.map(({ step, open, ms }, i) => (
+            <span
+              key={i}
+              className={`strip-seg strip-${stepKind(step)}${open ? " open" : ""}`}
+              style={{ flexGrow: ms }}
+              title={`${phaseLabel(step.phase, step.round)} · ${duration(ms)}`}
+            />
+          ))}
+        </div>
+      )}
+
+      {timed.length > 0 && (
         <ol className="steps">
-          {steps.map((s, i) => {
-            const open = s.end === null && live;
-            const running = open && s.phase !== "paused" && s.phase !== "manual-review";
-            const agent = PHASE_AGENT[s.phase];
+          {timed.map(({ step, open, ms }, i) => {
+            const running = open && !WAITING.has(step.phase);
+            const kind = stepKind(step);
             return (
               <li key={i} className={running ? "running" : ""}>
-                <span className={`step-mark ${agent ? `agent-${agent}` : ""} ${s.phase === "paused" ? "paused" : ""}`} />
-                <span className="step-label">{phaseLabel(s.phase, s.round)}</span>
+                <span className={`role-key role-${kind}`} />
+                <span className="step-label">{phaseLabel(step.phase, step.round)}</span>
                 <span className="step-time">
-                  {running ? <span className="spinner small" aria-hidden /> : null}
-                  {duration((s.end ?? (open ? now : s.start)) - s.start)}
+                  {running && <span className="spinner small" aria-hidden />}
+                  {duration(ms)}
                 </span>
               </li>
             );
@@ -92,18 +116,27 @@ function RoundCard({
         </ol>
       )}
 
-      {record && record.changedFiles.length > 0 && (
-        <p className="muted small">
-          Changed: {record.changedFiles.slice(0, 6).join(", ")}
-          {record.changedFiles.length > 6 ? ` and ${record.changedFiles.length - 6} more` : ""}
-        </p>
-      )}
-
-      {record?.builderSummary && (
-        <details className="report">
-          <summary>Builder report</summary>
-          <pre className="prose-pre">{record.builderSummary}</pre>
-        </details>
+      {record && (record.changedFiles.length > 0 || record.builderSummary) && (
+        <div className="round-notes">
+          {record.changedFiles.length > 0 && (
+            <p className="changed">
+              <span className="muted">Changed</span>
+              {record.changedFiles.slice(0, 6).map((file) => (
+                <code key={file}>{file}</code>
+              ))}
+              {record.changedFiles.length > 6 && <span className="muted">and {record.changedFiles.length - 6} more</span>}
+            </p>
+          )}
+          {record.builderSummary && (
+            <details className="report">
+              <summary>
+                <ChevronRight className="disclosure" />
+                Builder report
+              </summary>
+              <pre className="prose-pre">{record.builderSummary}</pre>
+            </details>
+          )}
+        </div>
       )}
 
       {record && record.findings.length > 0 && (
@@ -121,10 +154,8 @@ function RoundCard({
               return (
                 <tr key={f.id}>
                   <td>
-                    <div className="finding-issue">
-                      <span className={`sev sev-${f.severity}`}>{f.severity}</span>
-                      <span>{f.issue}</span>
-                    </div>
+                    <span className={`sev sev-${f.severity}`}>{SEVERITY_LABEL[f.severity] ?? f.severity}</span>
+                    <div className="finding-issue">{f.issue}</div>
                     {f.suggestion && <div className="muted small">{f.suggestion}</div>}
                   </td>
                   <td className="where">
@@ -168,7 +199,7 @@ function RoundCard({
           </button>
         </div>
       )}
-      {record && record.findings.length === 0 && <p className="ok-text">The reviewer reported no findings.</p>}
+      {record && record.findings.length === 0 && <p className="ok-text round-clean">The reviewer reported no findings</p>}
     </article>
   );
 }

@@ -1,7 +1,7 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 interface Props<T extends string> {
-  options: ReadonlyArray<readonly [T, string]>;
+  options: ReadonlyArray<readonly [T, ReactNode]>;
   value: T;
   onChange: (value: T) => void;
   variant?: "pill" | "tabs";
@@ -13,8 +13,10 @@ export function Segmented<T extends string>({ options, value, onChange, variant 
   const box = useRef<HTMLDivElement>(null);
   const [thumb, setThumb] = useState<{ left: number; width: number } | null>(null);
   const [ready, setReady] = useState(false);
+  const tabs = variant === "tabs";
 
   useLayoutEffect(() => {
+    if (!tabs) return;
     const measure = () => {
       const active = box.current?.querySelector<HTMLButtonElement>(`[data-value="${CSS.escape(value)}"]`);
       if (active) setThumb({ left: active.offsetLeft, width: active.offsetWidth });
@@ -23,7 +25,7 @@ export function Segmented<T extends string>({ options, value, onChange, variant 
     const observer = new ResizeObserver(measure);
     if (box.current) observer.observe(box.current);
     return () => observer.disconnect();
-  }, [value, options]);
+  }, [value, options, tabs]);
 
   useLayoutEffect(() => {
     if (!thumb || ready) return;
@@ -33,7 +35,7 @@ export function Segmented<T extends string>({ options, value, onChange, variant 
 
   return (
     <div ref={box} role="tablist" aria-label={label} className={`seg seg-${variant}${small ? " small" : ""}${ready ? " ready" : ""}`}>
-      {thumb && <span className="seg-thumb" style={{ transform: `translateX(${thumb.left}px)`, width: thumb.width }} />}
+      {tabs && thumb && <span className="seg-thumb" style={{ transform: `translateX(${thumb.left}px) scaleX(${thumb.width})` }} />}
       {options.map(([key, text]) => (
         <button
           key={key}

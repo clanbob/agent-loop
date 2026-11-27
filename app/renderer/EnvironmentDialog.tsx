@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Environment, McpServerTest, McpTool, ParsedServers, Setup } from "../shared/api.ts";
+import { FolderOpen, Plus, X } from "lucide-react";
 import { api, errorText } from "./api.ts";
 
 const PLACEHOLDER = `Paste MCP server settings, for example:
@@ -205,7 +206,7 @@ export function EnvironmentDialog({
         <div className="dialog-head">
           <h2 id="env-title">{editing ? `Edit ${editing.name}` : "New environment"}</h2>
           <button className="icon-btn" aria-label="Close" onClick={close}>
-            ×
+            <X />
           </button>
         </div>
 
@@ -239,7 +240,7 @@ export function EnvironmentDialog({
                   </button>
                   {!tool.builtIn && (
                     <button className="icon-btn small" aria-label={`Remove ${tool.name}`} title="Remove from your tools" onClick={() => removeTool(tool)}>
-                      ×
+                      <X size={14} />
                     </button>
                   )}
                 </li>
@@ -255,8 +256,8 @@ export function EnvironmentDialog({
             </p>
           )}
 
-          <div className={`add-tool ${adding ? "open" : ""}`}>
-            <div className="add-tool-inner">
+          {adding && (
+            <div className="add-tool">
               <input value={pasteName} onChange={(e) => setPasteName(e.target.value)} placeholder="Tool name (optional for JSON with names)" />
               <textarea className="code" value={pasteText} onChange={(e) => setPasteText(e.target.value)} rows={8} placeholder={PLACEHOLDER} spellCheck={false} />
               {parsed && (parsed.described.length > 0 || parsed.problems.length > 0) && (
@@ -290,16 +291,17 @@ export function EnvironmentDialog({
                 </button>
               </div>
             </div>
-          </div>
+          )}
 
           <div className="row-actions">
             {!adding && (
               <button className="btn btn-small" onClick={() => setAdding(true)}>
-                + Add MCP tool
+                <Plus />
+                Add MCP tool
               </button>
             )}
             <button className="btn btn-small btn-ghost" onClick={testSelected} disabled={testing || toolIds.length === 0}>
-              {testing ? "Testing…" : "Test selected"}
+              {testing ? "Testing" : "Test selected"}
             </button>
           </div>
         </div>
@@ -311,7 +313,8 @@ export function EnvironmentDialog({
           <div className="row">
             <input value={projectPath} onChange={(e) => setProjectPath(e.target.value)} placeholder="Filled in for each run; can be changed then" spellCheck={false} />
             <button className="btn" onClick={browse}>
-              Browse…
+              <FolderOpen />
+              Browse
             </button>
           </div>
           <span className="hint">
@@ -346,7 +349,7 @@ export function EnvironmentDialog({
             Cancel
           </button>
           <button className="btn btn-primary" onClick={save} disabled={saving || !name.trim()}>
-            {saving ? "Saving…" : "Save"}
+            {saving ? "Saving" : "Save"}
           </button>
         </div>
       </div>

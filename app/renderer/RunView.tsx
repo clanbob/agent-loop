@@ -1,8 +1,9 @@
 import { Fragment, useEffect, useState } from "react";
+import { Check, ChevronRight, CircleAlert, CircleCheck, CirclePause, CircleStop, CircleX, Play, Square, Trash2, TriangleAlert } from "lucide-react";
 import type { LogLine, RunDetail } from "../shared/api.ts";
 import { DEFAULT_CHOICES, PROVIDER_NAMES } from "../../src/roles.ts";
 import { api, errorText } from "./api.ts";
-import { STATUS_LABEL, basename, duration, phaseLabel, runDate, runTitle, timedSteps } from "./format.ts";
+import { PHASE_AGENT, SEVERITY_LABEL, STATUS_LABEL, basename, clockTime, duration, phaseLabel, runDate, runTitle, timedSteps } from "./format.ts";
 import { RoundsTab } from "./RoundsTab.tsx";
 import { OutputTab } from "./OutputTab.tsx";
 import { ChangesTab } from "./ChangesTab.tsx";
@@ -57,12 +58,13 @@ export function RunView({ id, onDeleted }: { id: string; onDeleted: () => void }
 
   const now = useNow(Boolean(detail?.live));
 
-  if (detail === undefined) return <div className="page muted">Loading…</div>;
+  if (detail === undefined) return <div className="page muted">Loading run</div>;
   if (detail === null) return <div className="page muted">This run no longer exists.</div>;
 
   const { state, status, live, pending } = detail;
   const steps = timedSteps(state.timeline ?? [], state.finishedAt);
   const current = live ? steps[steps.length - 1] : null;
+  const currentAgent = current ? PHASE_AGENT[current.phase] : undefined;
   const started = steps[0]?.start ?? Date.parse(state.startedAt);
   const ended = state.finishedAt ? Date.parse(state.finishedAt) : now;
   const displayStatus = pending ? "paused" : status;
@@ -110,7 +112,7 @@ export function RunView({ id, onDeleted }: { id: string; onDeleted: () => void }
         <div className="run-head-text">
           <h1 title={state.task}>{runTitle(state.task)}</h1>
           <div className="run-meta">
-            <span className={`status status-${displayStatus}`}>
+            <span className="status">
               <span className={`dot dot-${displayStatus}`} />
               {pending ? "Paused" : STATUS_LABEL[status]}
             </span>
@@ -120,8 +122,8 @@ export function RunView({ id, onDeleted }: { id: string; onDeleted: () => void }
                 Started with {state.startMode}
               </span>
             )}
-            <span>Round {Math.max(state.cursor.round, 1)}</span>
-            <span>{duration(ended - started)}</span>
+            <span className="mono">Round {Math.max(state.cursor.round, 1)}</span>
+            <span className="mono">{duration(ended - started)}</span>
             <span className="muted">{runDate(state.id)}</span>
           </div>
         </div>
@@ -135,16 +137,19 @@ export function RunView({ id, onDeleted }: { id: string; onDeleted: () => void }
           )}
           {live && (
             <button className="btn btn-danger" disabled={busy} onClick={() => act(() => api.stopRun(id))}>
+              <Square />
               Stop
             </button>
           )}
           {!live && status !== "clean" && (
             <button className="btn btn-primary" disabled={busy} onClick={() => act(() => api.resumeRun(id))}>
+              <Play />
               Resume
             </button>
           )}
           {!live && (
             <button className="btn btn-ghost" disabled={busy} onClick={remove}>
+              <Trash2 />
               Delete
             </button>
           )}
@@ -153,30 +158,40 @@ export function RunView({ id, onDeleted }: { id: string; onDeleted: () => void }
 
       {current && !pending && (
         <div className="now">
+          {currentAgent ? <span className={`role-key role-${currentAgent}`} /> : <span className="role-key" />}
+          <span className="now-label">{phaseLabel(current.phase, current.round)}</span>
           <span className="spinner" aria-hidden />
-          <strong>{phaseLabel(current.phase, current.round)}</strong>
-          <span className="muted">for {duration(now - current.start)}</span>
+          <span className="now-time">{duration(now - current.start)}</span>
         </div>
       )}
 
       {pending?.kind === "review" && (
         <div className="banner banner-warn">
-          <strong>Round {pending.round} is waiting for your review.</strong>
-          {tab !== "rounds" && <button className="btn" onClick={() => setTab("rounds")}>Review findings</button>}
+          <CirclePause className="banner-icon" />
+          <div className="banner-body">
+            <strong>Round {pending.round} is waiting for your review</strong>
+            <p>Mark each finding Fix or Skip, then send the fixes to the builder.</p>
+          </div>
+          {tab !== "rounds" && (
+            <div className="banner-actions">
+              <button className="btn" onClick={() => setTab("rounds")}>Review findings</button>
+            </div>
+          )}
         </div>
       )}
 
       {pending?.kind === "limit" && (
         <div className="banner banner-warn">
-          <div>
-            <strong>{pending.pause.agent} is out of usage.</strong>
-            {pending.pause.message && <div className="muted">{pending.pause.message}</div>}
-            <div>
+          <CirclePause className="banner-icon" />
+          <div className="banner-body">
+            <strong>{pending.pause.agent} is out of usage</strong>
+            {pending.pause.message && <p className="muted">{pending.pause.message}</p>}
+            <p>
               {pending.pause.resetAt
-                ? `Its limit resets around ${new Date(pending.pause.resetAt).toLocaleString()}.`
+                ? `Its limit resets around ${clockTime(pending.pause.resetAt)}.`
                 : "It did not say when its limit resets."}{" "}
               The run waits until you resume it; you can also close the app and resume later.
-            </div>
+            </p>
           </div>
           <div className="banner-actions">
             <button className="btn btn-primary" onClick={() => act(() => api.answerPause(id, true))}>
@@ -191,14 +206,15 @@ export function RunView({ id, onDeleted }: { id: string; onDeleted: () => void }
 
       {pending?.kind === "confirm" && (
         <div className="banner banner-warn">
-          <div>
+          <TriangleAlert className="banner-icon" />
+          <div className="banner-body">
             <strong>{pending.pause.reason}</strong>
             {pending.pause.details.length > 0 && (
               <ul className="banner-list">
                 {pending.pause.details.slice(0, 12).map((d, i) => (
                   <li key={i}>{d}</li>
                 ))}
-                {pending.pause.details.length > 12 && <li className="muted">…and {pending.pause.details.length - 12} more</li>}
+                {pending.pause.details.length > 12 && <li className="muted">and {pending.pause.details.length - 12} more</li>}
               </ul>
             )}
           </div>
@@ -213,7 +229,12 @@ export function RunView({ id, onDeleted }: { id: string; onDeleted: () => void }
         </div>
       )}
 
-      {notice && <div className={`banner ${notice.ok ? "banner-ok" : "banner-error"}`}>{notice.text}</div>}
+      {notice && (
+        <div className={`banner ${notice.ok ? "banner-ok" : "banner-error"}`}>
+          {notice.ok ? <Check className="banner-icon" /> : <CircleAlert className="banner-icon" />}
+          <div className="banner-body">{notice.text}</div>
+        </div>
+      )}
 
       {!live && <Outcome detail={detail} busy={busy} onAction={(a) => act(() => api.finishAction(id, a))} />}
 
@@ -232,10 +253,12 @@ export function RunView({ id, onDeleted }: { id: string; onDeleted: () => void }
         {tab === "changes" && <ChangesTab id={id} state={state} />}
         {tab === "task" && (
           <div className="task-tab">
-            <h3>Task</h3>
-            <pre className="prose-pre">{state.task}</pre>
+            <section>
+              <h3>Task</h3>
+              <pre className="prose-pre">{state.task}</pre>
+            </section>
             {state.startMode && (
-              <>
+              <section>
                 <h3>Starting point</h3>
                 <p className="prose-pre">
                   {state.startMode === "review"
@@ -243,43 +266,45 @@ export function RunView({ id, onDeleted }: { id: string; onDeleted: () => void }
                     : "The builder made changes before the first review."}
                   {state.startReason && <span className="muted"> {state.startReason}</span>}
                 </p>
-              </>
+              </section>
             )}
             {state.instructions && (
-              <>
+              <section>
                 <h3>Latest instructions</h3>
                 <pre className="prose-pre">{state.instructions}</pre>
-              </>
+              </section>
             )}
-            <h3>Workspace</h3>
-            {state.workspace.kind === "folder" ? (
-              <dl className="kv">
-                <dt>Project</dt>
-                <dd>{state.workspace.project}</dd>
-                <dt>Branch</dt>
-                <dd>{state.workspace.branch}</dd>
-                <dt>Scope</dt>
-                <dd>{state.workspace.scope.join(", ") || "Anywhere"}</dd>
-                <dt>Tests</dt>
-                <dd>{state.workspace.testCommand ?? "None"}</dd>
-              </dl>
-            ) : state.workspace.kind === "tools" ? (
-              <dl className="kv">
-                <dt>Works in</dt>
-                <dd>Live, through MCP tools only</dd>
-                <dt>Focus</dt>
-                <dd>{state.workspace.scope.join(", ") || "Not set"}</dd>
-              </dl>
-            ) : (
-              <dl className="kv">
-                <dt>Target</dt>
-                <dd>Open Roblox Studio place</dd>
-                <dt>Scope</dt>
-                <dd>{state.workspace.scope.join(", ")}</dd>
-              </dl>
-            )}
+            <section>
+              <h3>Workspace</h3>
+              {state.workspace.kind === "folder" ? (
+                <dl className="kv">
+                  <dt>Project</dt>
+                  <dd className="mono">{state.workspace.project}</dd>
+                  <dt>Branch</dt>
+                  <dd className="mono">{state.workspace.branch}</dd>
+                  <dt>Scope</dt>
+                  <dd className="mono">{state.workspace.scope.join(", ") || "Anywhere"}</dd>
+                  <dt>Tests</dt>
+                  <dd className="mono">{state.workspace.testCommand ?? "None"}</dd>
+                </dl>
+              ) : state.workspace.kind === "tools" ? (
+                <dl className="kv">
+                  <dt>Works in</dt>
+                  <dd>Live, through MCP tools only</dd>
+                  <dt>Focus</dt>
+                  <dd>{state.workspace.scope.join(", ") || "Not set"}</dd>
+                </dl>
+              ) : (
+                <dl className="kv">
+                  <dt>Target</dt>
+                  <dd>Open Roblox Studio place</dd>
+                  <dt>Scope</dt>
+                  <dd className="mono">{state.workspace.scope.join(", ")}</dd>
+                </dl>
+              )}
+            </section>
             {state.workspace.environment && (
-              <>
+              <section>
                 <h3>Environment</h3>
                 <dl className="kv">
                   <dt>Name</dt>
@@ -287,29 +312,34 @@ export function RunView({ id, onDeleted }: { id: string; onDeleted: () => void }
                   <dt>MCP tools</dt>
                   <dd>{envTools.join(", ") || "None"}</dd>
                 </dl>
-              </>
+              </section>
             )}
-            <h3>Models</h3>
-            <dl className="kv">
-              {(
-                [
-                  ["Judge", "judge"],
-                  ["Builder", "builder"],
-                  ["Reviewer", "reviewer"],
-                ] as const
-              ).map(([name, key]) => {
-                const choice = state.agents?.[key];
-                return (
-                  <Fragment key={key}>
-                    <dt>{name}</dt>
-                    <dd>
-                      {PROVIDER_NAMES[choice?.provider ?? DEFAULT_CHOICES[key].provider]} · {choice?.model ?? "default model"}
-                      {choice?.effort ? ` · effort ${choice.effort}` : ""}
-                    </dd>
-                  </Fragment>
-                );
-              })}
-            </dl>
+            <section>
+              <h3>Models</h3>
+              <dl className="kv">
+                {(
+                  [
+                    ["Judge", "judge"],
+                    ["Builder", "builder"],
+                    ["Reviewer", "reviewer"],
+                  ] as const
+                ).map(([name, key]) => {
+                  const choice = state.agents?.[key];
+                  return (
+                    <Fragment key={key}>
+                      <dt>
+                        <span className={`role-key role-${key}`} />
+                        {name}
+                      </dt>
+                      <dd>
+                        {PROVIDER_NAMES[choice?.provider ?? DEFAULT_CHOICES[key].provider]} · {choice?.model ?? "default model"}
+                        {choice?.effort ? ` · effort ${choice.effort}` : ""}
+                      </dd>
+                    </Fragment>
+                  );
+                })}
+              </dl>
+            </section>
           </div>
         )}
       </section>
@@ -325,62 +355,72 @@ function Outcome({ detail, busy, onAction }: { detail: RunDetail; busy: boolean;
     const isFolder = state.workspace.kind === "folder";
     return (
       <div className="outcome outcome-ok">
-        <div className="outcome-head">
-          <div>
-            <strong>
-              {state.endReason === "rest-skipped"
-                ? "Every remaining finding was marked Skip."
-                : "The reviewer reported no findings."}
-            </strong>
-            {state.resultNote && <pre className="prose-pre small">{state.resultNote}</pre>}
-          </div>
-          {isFolder && !finishDone && (
-            <div className="banner-actions">
-              <button className="btn btn-primary" disabled={busy} onClick={() => onAction("merge")}>
-                Merge into project
-              </button>
-              <button
-                className="btn"
-                disabled={busy}
-                onClick={() => window.confirm("Delete the branch and all of this run's work?") && onAction("discard")}
-              >
-                Discard branch
-              </button>
-            </div>
+        <CircleCheck className="outcome-icon" />
+        <div className="outcome-body">
+          <strong>
+            {state.endReason === "rest-skipped"
+              ? "Every remaining finding was marked Skip"
+              : "The reviewer reported no findings"}
+          </strong>
+          {state.resultNote && <p className="outcome-note">{state.resultNote}</p>}
+          {skipped.length > 0 && (
+            <details className="skipped">
+              <summary>
+                <ChevronRight className="disclosure" />
+                {skipped.length} finding{skipped.length === 1 ? "" : "s"} marked Skip
+              </summary>
+              <ul>
+                {skipped.map((s) => (
+                  <li key={`${s.round}:${s.finding.id}`}>
+                    <div className="finding-meta">
+                      <span className={`sev sev-${s.finding.severity}`}>{SEVERITY_LABEL[s.finding.severity] ?? s.finding.severity}</span>
+                      <code>
+                        {s.finding.file}
+                        {s.finding.line ? `:${s.finding.line}` : ""}
+                      </code>
+                    </div>
+                    <div>{s.finding.issue}</div>
+                    <div className="muted small">Why skipped: {s.reason}</div>
+                  </li>
+                ))}
+              </ul>
+            </details>
           )}
-          {finishDone && <span className="tag">{finishDone === "merged" ? "Merged" : "Discarded"}</span>}
         </div>
-        {skipped.length > 0 && (
-          <details className="skipped">
-            <summary>
-              {skipped.length} finding{skipped.length === 1 ? "" : "s"} marked Skip
-            </summary>
-            <ul>
-              {skipped.map((s) => (
-                <li key={`${s.round}:${s.finding.id}`}>
-                  <span className={`sev sev-${s.finding.severity}`}>{s.finding.severity}</span>{" "}
-                  <code>
-                    {s.finding.file}
-                    {s.finding.line ? `:${s.finding.line}` : ""}
-                  </code>{" "}
-                  {s.finding.issue}
-                  <div className="muted small">Why skipped: {s.reason}</div>
-                </li>
-              ))}
-            </ul>
-          </details>
+        {isFolder && !finishDone && (
+          <div className="banner-actions">
+            <button className="btn btn-primary" disabled={busy} onClick={() => onAction("merge")}>
+              Merge into project
+            </button>
+            <button
+              className="btn"
+              disabled={busy}
+              onClick={() => window.confirm("Delete the branch and all of this run's work?") && onAction("discard")}
+            >
+              Discard branch
+            </button>
+          </div>
+        )}
+        {finishDone && (
+          <span className="finish-done">
+            <Check />
+            {finishDone === "merged" ? "Merged" : "Discarded"}
+          </span>
         )}
       </div>
     );
   }
 
-  const label = status === "failed" ? "The run failed." : status === "interrupted" ? "The run was interrupted." : "The run was stopped.";
+  const label = status === "failed" ? "The run failed" : status === "interrupted" ? "The run was interrupted" : "The run was stopped";
   return (
     <div className={`outcome ${status === "failed" ? "outcome-error" : "outcome-neutral"}`}>
-      <strong>{label}</strong>
-      {state.error && <div>{state.error}</div>}
-      {state.resultNote && <div className="muted small">{state.resultNote}</div>}
-      <div className="muted small">Resume carries on from the step it stopped at.</div>
+      {status === "failed" ? <CircleX className="outcome-icon" /> : <CircleStop className="outcome-icon" />}
+      <div className="outcome-body">
+        <strong>{label}</strong>
+        {state.error && <p>{state.error}</p>}
+        {state.resultNote && <p className="muted">{state.resultNote}</p>}
+        <p className="muted">Resume carries on from the step it stopped at.</p>
+      </div>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Activity, Plus } from "lucide-react";
 import type { RunListItem } from "../shared/api.ts";
 import { api, isMock } from "./api.ts";
 import { STATUS_LABEL, runDate } from "./format.ts";
@@ -32,16 +33,17 @@ export function App() {
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-mark" aria-hidden>
-            ⟳
-          </span>
-          Agent Loop
-          {isMock && <span className="tag tag-preview">preview</span>}
+          <LoopMark />
+          <span>Agent Loop</span>
+          {isMock && <span className="brand-note">Preview</span>}
         </div>
-        <button className="btn btn-primary btn-block" onClick={() => setView({ kind: "new" })}>
-          + New run
+        <button className={`nav-row nav-new ${view.kind === "new" ? "selected" : ""}`} onClick={() => setView({ kind: "new" })}>
+          <span className="nav-icon">
+            <Plus />
+          </span>
+          New run
         </button>
-        <nav className="run-list">
+        <nav className="run-list" aria-label="Runs">
           {active.length > 0 && <h3 className="list-heading">Active</h3>}
           {active.map((r) => (
             <RunItem key={r.id} run={r} selected={view.kind === "run" && view.id === r.id} onSelect={select} />
@@ -50,10 +52,13 @@ export function App() {
           {earlier.map((r) => (
             <RunItem key={r.id} run={r} selected={view.kind === "run" && view.id === r.id} onSelect={select} />
           ))}
-          {runs.length === 0 && <p className="muted small pad">No runs yet.</p>}
+          {runs.length === 0 && <p className="list-empty">No runs yet</p>}
         </nav>
-        <button className="btn btn-ghost btn-block sidebar-foot" onClick={() => setView({ kind: "home" })}>
-          Tool status
+        <button className={`nav-row ${view.kind === "home" ? "selected" : ""}`} onClick={() => setView({ kind: "home" })}>
+          <span className="nav-icon">
+            <Activity />
+          </span>
+          Overview
         </button>
       </aside>
       <main className="main">
@@ -67,13 +72,25 @@ export function App() {
   );
 }
 
+function LoopMark() {
+  return (
+    <svg className="brand-mark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.25"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+      <path d="M21 3v5h-5" />
+    </svg>
+  );
+}
+
 function RunItem({ run, selected, onSelect }: { run: RunListItem; selected: boolean; onSelect: (id: string) => void }) {
   const status = run.paused ? "paused" : run.status;
   const details = `${run.title}\n${run.kind === "roblox" ? "Roblox" : run.kind === "tools" ? "MCP tools" : "Project"} · ${run.paused ? "Paused" : STATUS_LABEL[run.status]}${run.round > 0 ? ` · round ${run.round}` : ""} · ${runDate(run.id)}`;
   return (
-    <button className={`run-item ${selected ? "selected" : ""}`} onClick={() => onSelect(run.id)} title={details}>
-      <span className={`dot dot-${status}`} />
-      <span className="run-item-title">{run.title}</span>
+    <button className={`nav-row ${selected ? "selected" : ""}`} onClick={() => onSelect(run.id)} title={details}>
+      <span className="nav-icon">
+        <span className={`dot dot-${status}`} />
+      </span>
+      <span className="nav-label">{run.title}</span>
     </button>
   );
 }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
+import { CircleAlert, Folder, FolderOpen, Pencil, Play, Plus, X } from "lucide-react";
 import type { AgentChoices, AppInfo, Environment, Setup } from "../shared/api.ts";
 import { api, errorText } from "./api.ts";
 import { basename } from "./format.ts";
@@ -166,22 +167,24 @@ export function NewRun({ onStarted, onCancel }: { onStarted: (id: string) => voi
             return (
               <div key={e.id} className={`env-card ${e.id === env?.id ? "on" : ""}`}>
                 <button className="env-main" onClick={() => selectEnv(e)} aria-pressed={e.id === env?.id}>
-                  <span className="env-name">{e.name}</span>
-                  <span className="env-tools">
-                    {tools.length > 0 ? tools.map((t) => <span key={t.id} className="mini-chip">{t.name}</span>) : <span className="muted small">No MCP tools</span>}
+                  <span className="env-name">
+                    <span className="radio" aria-hidden />
+                    {e.name}
                   </span>
-                  <span className="env-path muted small">{e.projectPath ? basename(e.projectPath) : "No default project"}</span>
+                  <span className="env-tools">{tools.length > 0 ? tools.map((t) => t.name).join(", ") : "No MCP tools"}</span>
+                  <span className="env-path">
+                    <Folder />
+                    {e.projectPath ? basename(e.projectPath) : "No default project"}
+                  </span>
                 </button>
-                <button className="env-edit" onClick={() => setDialog({ editing: e })} aria-label={`Edit ${e.name}`}>
-                  Edit
+                <button className="icon-btn env-edit" onClick={() => setDialog({ editing: e })} aria-label={`Edit ${e.name}`} title="Edit environment">
+                  <Pencil />
                 </button>
               </div>
             );
           })}
           <button className="env-card env-new" onClick={() => setDialog({ editing: null })}>
-            <span className="env-plus" aria-hidden>
-              +
-            </span>
+            <Plus />
             New environment
           </button>
         </div>
@@ -201,7 +204,8 @@ export function NewRun({ onStarted, onCancel }: { onStarted: (id: string) => voi
         <div className="row">
           <input value={project} onChange={(e) => setProject(e.target.value)} placeholder="C:\path\to\your\git\project" spellCheck={false} />
           <button className="btn" onClick={browse}>
-            Browse…
+            <FolderOpen />
+            Browse
           </button>
           {project && (
             <button className="btn btn-ghost" onClick={() => setProject("")}>
@@ -233,7 +237,7 @@ export function NewRun({ onStarted, onCancel }: { onStarted: (id: string) => voi
               <li key={s} className="chip">
                 {s}
                 <button aria-label={`Remove ${s}`} onClick={() => setScope(scope.filter((x) => x !== s))}>
-                  ×
+                  <X size={14} />
                 </button>
               </li>
             ))}
@@ -271,7 +275,7 @@ export function NewRun({ onStarted, onCancel }: { onStarted: (id: string) => voi
             {guides.map((g, i) => (
               <span key={g} title={g}>
                 {i > 0 ? ", " : ""}
-                {basename(g)}
+                <code>{basename(g)}</code>
               </span>
             ))}
           </>
@@ -279,11 +283,17 @@ export function NewRun({ onStarted, onCancel }: { onStarted: (id: string) => voi
         .
       </p>
 
-      {error && <p className="error">{error}</p>}
+      {error && (
+        <p className="error">
+          <CircleAlert />
+          {error}
+        </p>
+      )}
 
       <div className="actions">
-        <button className="btn btn-primary" onClick={start} disabled={starting || !env}>
-          {starting ? "Starting…" : "Start run"}
+        <button className="btn btn-primary btn-large" onClick={start} disabled={starting || !env}>
+          <Play />
+          {starting ? "Starting" : "Start run"}
         </button>
         <button className="btn btn-ghost" onClick={onCancel}>
           Cancel

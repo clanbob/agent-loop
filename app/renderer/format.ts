@@ -45,6 +45,16 @@ export function phaseLabel(phase: Phase, round: number): string {
   }
 }
 
+export const SEVERITY_LABEL: Record<string, string> = {
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+};
+
+export function clockTime(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
 export const PHASE_AGENT: Partial<Record<Phase, string>> = {
   "choose-start": "judge",
   judge: "judge",

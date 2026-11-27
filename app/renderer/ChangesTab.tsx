@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { ChevronRight } from "lucide-react";
 import type { RunState } from "../shared/api.ts";
 import { api } from "./api.ts";
 import { Segmented } from "./Segmented.tsx";
@@ -57,7 +58,7 @@ export function ChangesTab({ id, state }: { id: string; state: RunState }) {
     <div className="changes">
       <div className="output-bar">
         <label className="inline">
-          Round{" "}
+          Round
           <select value={round} onChange={(e) => setRound(Number(e.target.value))}>
             {rounds.map((r) => (
               <option key={r} value={r}>
@@ -68,14 +69,15 @@ export function ChangesTab({ id, state }: { id: string; state: RunState }) {
         </label>
         <Segmented small label="Which changes" options={WHICH} value={which} onChange={setWhich} />
       </div>
-      {text === null && <p className="muted">Loading…</p>}
+      {text === null && <p className="muted">Loading changes</p>}
       {text !== null && files.length === 0 && <p className="muted">No changes in this view.</p>}
       {files.map((f) => (
         <details key={f.name} className="diff-file" open={files.length <= 6}>
           <summary>
-            <code>{f.name}</code>
-            <span className="ok-text">+{f.added}</span>
-            <span className="error-text">−{f.removed}</span>
+            <ChevronRight className="disclosure" />
+            <code className="diff-name">{f.name}</code>
+            <span className="diff-count ok-text">+{f.added}</span>
+            <span className="diff-count error-text">−{f.removed}</span>
           </summary>
           <pre className="diff">
             {f.lines.map((line, i) => (
